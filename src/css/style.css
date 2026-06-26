@@ -243,6 +243,7 @@ body {
   min-width: 0;
 }
 
+.model-edit,
 .model-close {
   width: 22px;
   height: 22px;
@@ -259,13 +260,21 @@ body {
   flex-shrink: 0;
 }
 
+.model-item:hover .model-edit,
+.model-item.active .model-edit,
 .model-item.is-loaded:hover .model-close,
 .model-item.is-loaded.active .model-close {
   display: inline-flex;
 }
 
+.model-item.split-selecting .model-edit,
 .model-item.split-selecting .model-close {
   display: none;
+}
+
+.model-edit:hover {
+  color: var(--accent);
+  background: rgba(124, 124, 255, 0.12);
 }
 
 .model-close:hover {
@@ -664,7 +673,8 @@ body {
 }
 
 .btn-cancel,
-.btn-confirm {
+.btn-confirm,
+.btn-delete-model {
   padding: 8px 20px;
   border-radius: 6px;
   font-size: 14px;
@@ -684,8 +694,19 @@ body {
   color: #fff;
 }
 
+.btn-delete-model {
+  margin-right: auto;
+  background: rgba(224, 85, 106, 0.12);
+  color: var(--danger);
+  border: 1px solid rgba(224, 85, 106, 0.35);
+}
+
 .btn-cancel:hover {
   color: var(--text-primary);
+}
+
+.btn-delete-model:hover {
+  background: rgba(224, 85, 106, 0.18);
 }
 
 .btn-confirm:hover {

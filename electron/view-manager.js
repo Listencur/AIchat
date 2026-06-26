@@ -359,6 +359,21 @@ class ViewManager {
   }
 
   /**
+   * 更新已创建 View 的模型信息；URL 变化时复用当前 session 重新加载。
+   */
+  updateModel(model) {
+    const entry = this.views.get(model.id);
+    if (!entry) return;
+
+    const previousUrl = entry.model.url;
+    entry.model = model;
+
+    if (previousUrl !== model.url && !entry.view.webContents.isDestroyed()) {
+      entry.view.webContents.loadURL(model.url);
+    }
+  }
+
+  /**
    * 生成当前会话快照。只保存页面位置，不触碰 Cookie/LocalStorage 等登录态。
    */
   async snapshot() {
@@ -483,6 +498,7 @@ class ViewManager {
     const entry = this.views.get(this.activeId);
     if (entry) {
       entry.view.setVisible(true);
+      this.updateBounds(this.activeId);
     }
   }
 

@@ -245,7 +245,12 @@ function syncUserModelsData(userData, defaultData) {
   for (const defaultModel of defaultData.models) {
     const existing = userById.get(defaultModel.id);
     if (existing) {
-      models.push({ ...existing, ...defaultModel });
+      models.push({
+        ...defaultModel,
+        ...existing,
+        id: defaultModel.id,
+        partition: existing.partition || defaultModel.partition,
+      });
     } else if (!removedSet.has(defaultModel.id)) {
       models.push(defaultModel);
     }
@@ -396,6 +401,41 @@ function registerIPC() {
     // 通知渲染进程更新
     mainWindow.webContents.send('models:updated', models);
     return newModel;
+  });
+
+  // 编辑模型
+  ipcMain.handle('models:update', (_event, id, config) => {
+    const rawConfig = config && typeof config === 'object' ? config : {};
+    const name = typeof rawConfig.name === 'string' ? rawConfig.name.trim() : '';
+    const url = typeof rawConfig.url === 'string' ? rawConfig.url.trim() : '';
+
+    if (!name || !/^https?:\/\/.+/.test(url)) {
+      return null;
+    }
+
+    const models = loadModels();
+    const index = models.findIndex((model) => model.id === id);
+    if (index === -1) {
+      return null;
+    }
+
+    const updatedModel = {
+      ...models[index],
+      name,
+      url,
+      icon: typeof rawConfig.icon === 'string' && rawConfig.icon.trim() ? rawConfig.icon.trim() : '🤖',
+      color: typeof rawConfig.color === 'string' && rawConfig.color ? rawConfig.color : '#666666',
+    };
+
+    models[index] = updatedModel;
+    saveModels(models);
+
+    if (viewManager) {
+      viewManager.updateModel(updatedModel);
+    }
+
+    mainWindow.webContents.send('models:updated', models);
+    return updatedModel;
   });
 
   // 删除模型

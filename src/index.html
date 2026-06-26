@@ -139,7 +139,7 @@
   <div class="modal-overlay" id="modalAddModel">
     <div class="modal">
       <div class="modal-header">
-        <h2>添加 AI 模型</h2>
+        <h2 id="modelModalTitle">添加 AI 模型</h2>
         <button class="modal-close" id="btnCloseModal">&times;</button>
       </div>
       <form class="modal-body" id="addModelForm">
@@ -160,8 +160,9 @@
           <input type="color" id="inputColor" name="color" value="#666666" />
         </label>
         <div class="modal-footer">
+          <button type="button" class="btn-delete-model" id="btnDeleteModel" hidden>删除</button>
           <button type="button" class="btn-cancel" id="btnCancelAdd">取消</button>
-          <button type="submit" class="btn-confirm">添加</button>
+          <button type="submit" class="btn-confirm" id="btnSubmitModel">添加</button>
         </div>
       </form>
     </div>

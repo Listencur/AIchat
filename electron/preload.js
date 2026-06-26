@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld('api', {
     /** 添加新模型 */
     add: (config) => ipcRenderer.invoke('models:add', config),
 
+    /** 编辑模型 */
+    update: (id, config) => ipcRenderer.invoke('models:update', id, config),
+
     /** 删除模型 */
     remove: (id) => ipcRenderer.invoke('models:remove', id),
 
