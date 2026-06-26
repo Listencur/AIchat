@@ -45,6 +45,7 @@
       const li = document.createElement('li');
       li.className = 'model-item';
       li.dataset.id = model.id;
+      li.title = '右键编辑模型';
       li.style.setProperty('--model-color', model.color);
 
       if (splitSelecting) {
@@ -66,19 +67,18 @@
       li.innerHTML = `
         <span class="model-icon">${model.icon || '🤖'}</span>
         <span class="model-name">${escapeHtml(model.name)}</span>
-        <button class="model-edit" type="button" title="编辑模型" aria-label="编辑 ${escapeHtml(model.name)}">✎</button>
         <button class="model-close" type="button" title="结束并释放内存" aria-label="结束 ${escapeHtml(model.name)}" ${loadedModelIds.has(model.id) ? '' : 'disabled'}>×</button>
         <span class="model-check">✓</span>
       `;
 
-      li.querySelector('.model-edit').addEventListener('click', (event) => {
-        event.stopPropagation();
-        window.modelModal.openEdit({ ...model });
-      });
-
       li.querySelector('.model-close').addEventListener('click', (event) => {
         event.stopPropagation();
         closeModel(model.id);
+      });
+
+      li.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        window.modelModal.openEdit({ ...model });
       });
 
       li.addEventListener('click', () => {

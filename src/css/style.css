@@ -243,7 +243,6 @@ body {
   min-width: 0;
 }
 
-.model-edit,
 .model-close {
   width: 22px;
   height: 22px;
@@ -260,21 +259,13 @@ body {
   flex-shrink: 0;
 }
 
-.model-item:hover .model-edit,
-.model-item.active .model-edit,
 .model-item.is-loaded:hover .model-close,
 .model-item.is-loaded.active .model-close {
   display: inline-flex;
 }
 
-.model-item.split-selecting .model-edit,
 .model-item.split-selecting .model-close {
   display: none;
-}
-
-.model-edit:hover {
-  color: var(--accent);
-  background: rgba(124, 124, 255, 0.12);
 }
 
 .model-close:hover {
