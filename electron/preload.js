@@ -53,6 +53,9 @@ contextBridge.exposeInMainWorld('api', {
     /** 刷新当前视图 */
     refresh: () => ipcRenderer.invoke('view:refresh'),
 
+    /** 结束指定模型的 WebView，释放内存 */
+    close: (id) => ipcRenderer.invoke('view:close', id),
+
     /** 进入分屏模式 */
     enterSplit: (ids) => ipcRenderer.invoke('view:enterSplit', ids),
 
@@ -77,6 +80,13 @@ contextBridge.exposeInMainWorld('api', {
       const handler = (_event, data) => callback(data);
       ipcRenderer.on('view:splitChanged', handler);
       return () => ipcRenderer.removeListener('view:splitChanged', handler);
+    },
+
+    /** 监听模型视图结束事件 */
+    onClosed: (callback) => {
+      const handler = (_event, data) => callback(data);
+      ipcRenderer.on('view:closed', handler);
+      return () => ipcRenderer.removeListener('view:closed', handler);
     },
   },
 

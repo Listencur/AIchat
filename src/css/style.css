@@ -239,6 +239,42 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.model-close {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.model-item.is-loaded:hover .model-close,
+.model-item.is-loaded.active .model-close {
+  display: inline-flex;
+}
+
+.model-item.split-selecting .model-close {
+  display: none;
+}
+
+.model-close:hover {
+  color: var(--danger);
+  background: rgba(224, 85, 106, 0.12);
+}
+
+.model-close:disabled {
+  display: none;
 }
 
 .model-item.split-selecting {

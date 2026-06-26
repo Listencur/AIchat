@@ -414,7 +414,7 @@ class ViewManager {
    */
   removeView(modelId) {
     const entry = this.views.get(modelId);
-    if (!entry) return;
+    if (!entry) return this.getState();
 
     this.win.contentView.removeChildView(entry.view);
     entry.view.webContents.destroy();
@@ -423,12 +423,36 @@ class ViewManager {
     this.splitRatios = this.splitIds.map(() => 1 / Math.max(1, this.splitIds.length));
 
     if (this.activeId === modelId) {
-      this.activeId = null;
+      this.activeId = this.splitMode && this.splitIds.length > 0 ? this.splitIds[0] : null;
     }
 
     if (this.splitMode && this.splitIds.length < 2) {
       this.exitSplit();
+    } else if (this.splitMode) {
+      this.updateSplitBounds();
     }
+
+    return this.getState();
+  }
+
+  /**
+   * 结束单个模型页面进程，用于主动释放内存，不删除模型配置和登录态。
+   */
+  closeView(modelId) {
+    return this.removeView(modelId);
+  }
+
+  /**
+   * 获取当前视图状态，供渲染进程同步 UI。
+   */
+  getState() {
+    return {
+      activeId: this.activeId,
+      splitMode: this.splitMode,
+      splitIds: this.splitIds.slice(),
+      splitRatios: this.splitMode ? this.getNormalizedSplitRatios() : [],
+      loadedIds: Array.from(this.views.keys()),
+    };
   }
 
   /**

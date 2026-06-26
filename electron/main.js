@@ -488,6 +488,15 @@ function registerIPC() {
     return true;
   });
 
+  // 结束指定模型的 WebView，用于释放内存；不删除模型配置和登录态
+  ipcMain.handle('view:close', (_event, modelId) => {
+    const state = viewManager.closeView(modelId);
+    mainWindow.webContents.send('view:closed', { id: modelId, state });
+    mainWindow.webContents.send('view:splitChanged', { enabled: state.splitMode, ids: state.splitIds });
+    mainWindow.webContents.send('view:switched', { id: state.activeId });
+    return state;
+  });
+
   // 进入分屏模式
   ipcMain.handle('view:enterSplit', async (_event, modelIds) => {
     if (!Array.isArray(modelIds) || modelIds.length < 2 || modelIds.length > 3) {

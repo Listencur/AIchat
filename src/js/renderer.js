@@ -29,6 +29,7 @@
   let visibleModelsCache = [];
   let groupsCache = [];
   let activeGroupId = 'all';
+  let loadedModelIds = new Set();
   let splitSelecting = false;
   let splitRatios = [];
   const splitSelection = new Set();
@@ -58,11 +59,21 @@
         li.classList.add('active');
       }
 
+      if (loadedModelIds.has(model.id)) {
+        li.classList.add('is-loaded');
+      }
+
       li.innerHTML = `
         <span class="model-icon">${model.icon || '🤖'}</span>
         <span class="model-name">${escapeHtml(model.name)}</span>
+        <button class="model-close" type="button" title="结束并释放内存" aria-label="结束 ${escapeHtml(model.name)}" ${loadedModelIds.has(model.id) ? '' : 'disabled'}>×</button>
         <span class="model-check">✓</span>
       `;
+
+      li.querySelector('.model-close').addEventListener('click', (event) => {
+        event.stopPropagation();
+        closeModel(model.id);
+      });
 
       li.addEventListener('click', () => {
         if (splitSelecting) {
@@ -83,8 +94,49 @@
    */
   function switchModel(id) {
     window.api.view.switch(id).then((ok) => {
-      if (ok) updateActive(id);
+      if (ok) {
+        loadedModelIds.add(id);
+        updateActive(id);
+        renderModels(getVisibleModels());
+      }
     });
+  }
+
+  async function closeModel(id) {
+    if (!loadedModelIds.has(id)) return;
+
+    const state = await window.api.view.close(id);
+    syncViewState(state, id);
+  }
+
+  function syncViewState(state, closedId = null) {
+    if (!state) return;
+
+    loadedModelIds = new Set(Array.isArray(state.loadedIds) ? state.loadedIds : []);
+
+    if (closedId) {
+      splitSelection.delete(closedId);
+    }
+
+    if (state.splitMode && Array.isArray(state.splitIds) && state.splitIds.length >= 2) {
+      splitSelecting = true;
+      splitSelection.clear();
+      state.splitIds.forEach((id) => splitSelection.add(id));
+      splitRatios = normalizeRatios(state.splitRatios, state.splitIds.length);
+      updateActive(state.activeId || state.splitIds[0]);
+      updateSplitControls();
+      renderModels(getVisibleModels());
+      renderSplitResizers();
+      return;
+    }
+
+    splitSelecting = false;
+    splitSelection.clear();
+    splitRatios = [];
+    clearSplitResizers();
+    updateActive(state.activeId || null);
+    updateSplitControls();
+    renderModels(getVisibleModels());
   }
 
   /**
@@ -227,8 +279,10 @@
       splitRatios = ids.map(() => 1 / ids.length);
       const ok = await window.api.view.enterSplit(ids);
       if (ok) {
+        ids.forEach((id) => loadedModelIds.add(id));
         mainPlaceholder.style.display = 'none';
         updateActive(ids[0]);
+        renderModels(getVisibleModels());
         renderSplitResizers();
       }
       return;
@@ -406,8 +460,10 @@
       const ok = await window.api.view.enterSplit(splitIds);
       if (ok) {
         await window.api.view.setSplitRatios(splitRatios);
+        splitIds.forEach((id) => loadedModelIds.add(id));
         mainPlaceholder.style.display = 'none';
         updateActive(splitIds[0]);
+        renderModels(getVisibleModels());
         renderSplitResizers();
         return true;
       }
@@ -430,9 +486,7 @@
    */
   function updateActive(id) {
     activeModelId = id;
-    if (id) {
-      mainPlaceholder.style.display = 'none';
-    }
+    mainPlaceholder.style.display = id ? 'none' : 'flex';
 
     document.querySelectorAll('.model-item').forEach((item) => {
       item.classList.toggle('active', item.dataset.id === id);
@@ -537,6 +591,7 @@
       const list = models.models || models;
       modelsCache = list;
       const modelIds = new Set(list.map((model) => model.id));
+      loadedModelIds = new Set(Array.from(loadedModelIds).filter((id) => modelIds.has(id)));
       for (const id of Array.from(splitSelection)) {
         if (!modelIds.has(id)) {
           splitSelection.delete(id);
@@ -563,6 +618,10 @@
     window.api.view.onSwitched((data) => {
       const id = data.id || data;
       updateActive(id);
+    });
+
+    window.api.view.onClosed((data) => {
+      syncViewState(data.state, data.id);
     });
 
     splitToggleBtn.addEventListener('click', () => {
