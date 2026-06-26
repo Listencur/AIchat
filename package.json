@@ -1,0 +1,15 @@
+{
+  "name": "ai-chat-hub",
+  "version": "1.0.0",
+  "description": "AI对话聚合工作台 — 多AI网页聚合，会话隔离，一键切换",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^42.0.0"
+  }
+}

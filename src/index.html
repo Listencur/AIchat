@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI对话聚合</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- ── 侧边栏 ── -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">AI 对话聚合</span>
+      </div>
+
+      <nav class="model-list" id="modelList">
+        <!-- 模型项由 renderer.js 动态渲染 -->
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="btn-add-model" id="btnAddModel">
+          <span class="btn-icon">+</span>
+          <span>添加模型</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- ── 主区域（WebView 覆盖在此区域上方） ── -->
+    <main class="main-area" id="mainArea">
+      <div class="main-placeholder" id="mainPlaceholder">
+        <div class="placeholder-content">
+          <div class="placeholder-icon">🤖</div>
+          <p>从左侧选择一个 AI 模型开始对话</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ── 添加模型弹窗 ── -->
+  <div class="modal-overlay" id="modalAddModel">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>添加 AI 模型</h2>
+        <button class="modal-close" id="btnCloseModal">&times;</button>
+      </div>
+      <form class="modal-body" id="addModelForm">
+        <label class="form-row">
+          <span class="form-label">名称</span>
+          <input type="text" id="inputName" name="name" placeholder="如：Claude" required maxlength="30" />
+        </label>
+        <label class="form-row">
+          <span class="form-label">网址</span>
+          <input type="url" id="inputUrl" name="url" placeholder="https://claude.ai" required />
+        </label>
+        <label class="form-row">
+          <span class="form-label">图标 (可选)</span>
+          <input type="text" id="inputIcon" name="icon" placeholder="🤖" maxlength="4" />
+        </label>
+        <label class="form-row">
+          <span class="form-label">主题色 (可选)</span>
+          <input type="color" id="inputColor" name="color" value="#666666" />
+        </label>
+        <div class="modal-footer">
+          <button type="button" class="btn-cancel" id="btnCancelAdd">取消</button>
+          <button type="submit" class="btn-confirm">添加</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/add-model.js"></script>
+  <script src="js/renderer.js"></script>
+</body>
+</html>

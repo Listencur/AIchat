@@ -1,0 +1,316 @@
+/* ============================================
+   AI对话聚合 — 深色主题样式
+   ============================================ */
+
+:root {
+  /* 侧边栏宽度，⚠️ 必须与 electron/view-manager.js 的 SIDEBAR_WIDTH 一致 */
+  --sidebar-width: 240px;
+
+  /* 配色 */
+  --bg-sidebar: #1e1e2e;
+  --bg-main: #2a2a3c;
+  --bg-hover: #2d2d44;
+  --bg-active: #2d2d44;
+  --bg-input: #1a1a28;
+  --text-primary: #e0e0e8;
+  --text-secondary: #8888aa;
+  --border-color: #3a3a52;
+  --accent: #7c7cff;
+  --danger: #e0556a;
+}
+
+/* ── 全局重置 ── */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  background: var(--bg-main);
+  color: var(--text-primary);
+  overflow: hidden;
+  height: 100vh;
+}
+
+/* ── 主布局 ── */
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+/* ── 侧边栏 ── */
+.sidebar {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  background: var(--bg-sidebar);
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-color);
+  height: 100vh;
+}
+
+.sidebar-header {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.5px;
+}
+
+/* ── 模型列表 ── */
+.model-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+/* 滚动条美化 */
+.model-list::-webkit-scrollbar {
+  width: 6px;
+}
+.model-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.model-list::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+.model-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  cursor: pointer;
+  transition: background 0.15s;
+  position: relative;
+  border-left: 3px solid transparent;
+}
+
+.model-item:hover {
+  background: var(--bg-hover);
+}
+
+.model-item.active {
+  background: var(--bg-active);
+  border-left-color: var(--model-color, var(--accent));
+}
+
+.model-item .model-icon {
+  font-size: 20px;
+  width: 28px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.model-item .model-name {
+  font-size: 14px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 添加按钮 ── */
+.sidebar-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.btn-add-model {
+  width: 100%;
+  padding: 10px;
+  background: transparent;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+
+.btn-add-model:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(124, 124, 255, 0.08);
+}
+
+.btn-add-model .btn-icon {
+  font-size: 16px;
+}
+
+/* ── 主区域 ── */
+.main-area {
+  flex: 1;
+  position: relative;
+  background: var(--bg-main);
+  height: 100vh;
+  /* WebView 会覆盖在此区域上方 */
+}
+
+.main-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.placeholder-content {
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.placeholder-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.placeholder-content p {
+  font-size: 14px;
+}
+
+/* ── 模态框 ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-overlay.show {
+  display: flex;
+}
+
+.modal {
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  width: 420px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 22px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  color: var(--text-primary);
+}
+
+.modal-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.form-row input[type="text"],
+.form-row input[type="url"] {
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.form-row input:focus {
+  border-color: var(--accent);
+}
+
+.form-row input[type="color"] {
+  width: 48px;
+  height: 32px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-input);
+  cursor: pointer;
+  padding: 2px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.btn-cancel,
+.btn-confirm {
+  padding: 8px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.15s;
+}
+
+.btn-cancel {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.btn-confirm {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-cancel:hover {
+  color: var(--text-primary);
+}
+
+.btn-confirm:hover {
+  opacity: 0.85;
+}

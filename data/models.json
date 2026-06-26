@@ -1,0 +1,28 @@
+{
+  "models": [
+    {
+      "id": "chatgpt",
+      "name": "ChatGPT",
+      "url": "https://chatgpt.com",
+      "icon": "💬",
+      "color": "#10a37f",
+      "partition": "persist:chatgpt"
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini",
+      "url": "https://gemini.google.com",
+      "icon": "✨",
+      "color": "#4285f4",
+      "partition": "persist:gemini"
+    },
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "url": "https://chat.deepseek.com",
+      "icon": "🐳",
+      "color": "#4d6bfe",
+      "partition": "persist:deepseek"
+    }
+  ]
+}
