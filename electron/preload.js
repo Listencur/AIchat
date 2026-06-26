@@ -26,6 +26,25 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
 
+  // ── 分组管理 ──
+  groups: {
+    /** 获取所有自定义分组 */
+    list: () => ipcRenderer.invoke('groups:list'),
+
+    /** 添加分组 */
+    add: (config) => ipcRenderer.invoke('groups:add', config),
+
+    /** 删除分组 */
+    remove: (id) => ipcRenderer.invoke('groups:remove', id),
+
+    /** 监听分组列表更新事件 */
+    onUpdated: (callback) => {
+      const handler = (_event, data) => callback(data);
+      ipcRenderer.on('groups:updated', handler);
+      return () => ipcRenderer.removeListener('groups:updated', handler);
+    },
+  },
+
   // ── 视图操作 ──
   view: {
     /** 切换到指定模型 */
@@ -39,6 +58,9 @@ contextBridge.exposeInMainWorld('api', {
 
     /** 退出分屏模式 */
     exitSplit: () => ipcRenderer.invoke('view:exitSplit'),
+
+    /** 调整分屏列宽比例 */
+    setSplitRatios: (ratios) => ipcRenderer.invoke('view:setSplitRatios', ratios),
 
     /** 隐藏/显示所有 WebView（弹窗时隐藏，关闭时恢复） */
     setVisible: (visible) => ipcRenderer.invoke('view:setVisible', visible),
@@ -65,5 +87,11 @@ contextBridge.exposeInMainWorld('api', {
 
     /** 保存应用设置 */
     set: (settings) => ipcRenderer.invoke('settings:set', settings),
+  },
+
+  // ── 会话快照 ──
+  snapshot: {
+    /** 获取上次保存的会话快照 */
+    get: () => ipcRenderer.invoke('snapshot:get'),
   },
 });

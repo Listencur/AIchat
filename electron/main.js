@@ -26,11 +26,15 @@ app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 const defaultModelsPath = path.join(__dirname, '..', 'data', 'models.json');
 const userModelsPath = path.join(app.getPath('userData'), 'models.json');
 const userSettingsPath = path.join(app.getPath('userData'), 'settings.json');
+const userGroupsPath = path.join(app.getPath('userData'), 'groups.json');
+const userSnapshotPath = path.join(app.getPath('userData'), 'snapshot.json');
 const DEFAULT_SETTINGS = {
   proxyMode: 'system',
   proxyUrl: 'http://127.0.0.1:7897',
+  restoreSnapshot: false,
 };
 const PROXY_URL_PATTERN = /^(https?|socks5?):\/\/.+/;
+const SNAPSHOT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 30;
 
 function readJsonFile(filePath, fallback) {
   try {
@@ -50,7 +54,9 @@ function normalizeSettings(settings) {
     ? rawSettings.proxyUrl.trim()
     : DEFAULT_SETTINGS.proxyUrl;
 
-  return { proxyMode, proxyUrl };
+  const restoreSnapshot = rawSettings.restoreSnapshot === true;
+
+  return { proxyMode, proxyUrl, restoreSnapshot };
 }
 
 function loadSettings() {
@@ -66,6 +72,116 @@ function saveSettings(settings) {
   const normalized = normalizeSettings(settings);
   fs.writeFileSync(userSettingsPath, JSON.stringify(normalized, null, 2), 'utf-8');
   return normalized;
+}
+
+function normalizeGroupsData(data) {
+  const groups = Array.isArray(data.groups) ? data.groups : [];
+
+  return {
+    groups: groups
+      .filter((group) => group && typeof group.name === 'string' && Array.isArray(group.modelIds))
+      .map((group) => ({
+        id: String(group.id || generateGroupId(group.name)),
+        name: group.name.trim(),
+        modelIds: group.modelIds.map(String),
+      }))
+      .filter((group) => group.name && group.modelIds.length > 0),
+  };
+}
+
+function loadGroups() {
+  if (!fs.existsSync(userGroupsPath)) {
+    saveGroups([]);
+    return [];
+  }
+
+  return normalizeGroupsData(readJsonFile(userGroupsPath, { groups: [] })).groups;
+}
+
+function saveGroups(groups) {
+  const data = normalizeGroupsData({ groups });
+  fs.writeFileSync(userGroupsPath, JSON.stringify(data, null, 2), 'utf-8');
+  return data.groups;
+}
+
+function isRestorableUrl(url) {
+  if (typeof url !== 'string' || !url) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function normalizeSnapshot(data) {
+  const raw = data && typeof data === 'object' ? data : {};
+  const savedAt = typeof raw.savedAt === 'string' ? raw.savedAt : '';
+  const savedTime = savedAt ? Date.parse(savedAt) : 0;
+  const isFresh = savedTime > 0 && Date.now() - savedTime <= SNAPSHOT_MAX_AGE_MS;
+  const entries = Array.isArray(raw.entries) ? raw.entries : [];
+  const splitIds = Array.isArray(raw.splitIds) ? raw.splitIds.map(String) : [];
+  const splitRatios = Array.isArray(raw.splitRatios)
+    ? raw.splitRatios.map(Number).filter((ratio) => ratio > 0)
+    : [];
+
+  if (!isFresh) {
+    return {
+      version: 1,
+      savedAt: '',
+      activeModelId: '',
+      splitMode: false,
+      splitIds: [],
+      splitRatios: [],
+      entries: [],
+    };
+  }
+
+  return {
+    version: 1,
+    savedAt,
+    activeModelId: typeof raw.activeModelId === 'string' ? raw.activeModelId : '',
+    splitMode: raw.splitMode === true,
+    splitIds: splitIds.slice(0, 3),
+    splitRatios: splitRatios.slice(0, 3),
+    entries: entries
+      .filter((entry) => entry && typeof entry.modelId === 'string' && isRestorableUrl(entry.url))
+      .map((entry) => ({
+        modelId: entry.modelId,
+        url: entry.url,
+        scrollY: Math.max(0, Number(entry.scrollY) || 0),
+      })),
+  };
+}
+
+function loadSnapshot() {
+  if (!fs.existsSync(userSnapshotPath)) {
+    return normalizeSnapshot(null);
+  }
+
+  return normalizeSnapshot(readJsonFile(userSnapshotPath, {}));
+}
+
+function saveSnapshot(snapshot) {
+  const normalized = normalizeSnapshot({
+    ...snapshot,
+    savedAt: snapshot && snapshot.savedAt ? snapshot.savedAt : new Date().toISOString(),
+  });
+
+  fs.writeFileSync(userSnapshotPath, JSON.stringify(normalized, null, 2), 'utf-8');
+  return normalized;
+}
+
+async function persistSessionSnapshot() {
+  if (!viewManager || !loadSettings().restoreSnapshot) {
+    return null;
+  }
+
+  const snapshot = await viewManager.snapshot();
+  return saveSnapshot(snapshot);
 }
 
 function createProxyOptions(settings) {
@@ -193,6 +309,11 @@ function generateModelId(name) {
   return `${base}-${Date.now().toString(36)}`;
 }
 
+function generateGroupId(name) {
+  const base = name.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  return `group-${base || 'custom'}-${Date.now().toString(36)}`;
+}
+
 // ── 窗口创建 ──
 
 function createWindow() {
@@ -215,7 +336,8 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, '..', 'src', 'index.html'));
 
   // 初始化 ViewManager
-  viewManager = new ViewManager(mainWindow, loadSettings());
+  const settings = loadSettings();
+  viewManager = new ViewManager(mainWindow, settings, settings.restoreSnapshot ? loadSnapshot() : null);
 
   // 窗口 resize 时重新计算所有 View 的 bounds
   mainWindow.on('resize', () => {
@@ -226,6 +348,21 @@ function createWindow() {
   if (process.argv.includes('--dev')) {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
+
+  let closeAfterSnapshot = false;
+  mainWindow.on('close', async (event) => {
+    if (closeAfterSnapshot) return;
+
+    if (loadSettings().restoreSnapshot && viewManager) {
+      event.preventDefault();
+      closeAfterSnapshot = true;
+      try {
+        await persistSessionSnapshot();
+      } finally {
+        mainWindow.close();
+      }
+    }
+  });
 
   mainWindow.on('closed', () => {
     if (viewManager) viewManager.destroyAll();
@@ -274,11 +411,58 @@ function registerIPC() {
 
     writeUserModelsData(data);
 
+    const groups = loadGroups()
+      .map((group) => ({
+        ...group,
+        modelIds: group.modelIds.filter((modelId) => modelId !== id),
+      }))
+      .filter((group) => group.modelIds.length > 0);
+    saveGroups(groups);
+
     // 销毁对应的 View
     if (viewManager) viewManager.removeView(id);
 
     // 通知渲染进程更新
     mainWindow.webContents.send('models:updated', data.models);
+    mainWindow.webContents.send('groups:updated', groups);
+    return true;
+  });
+
+  // 分组列表
+  ipcMain.handle('groups:list', () => {
+    return loadGroups();
+  });
+
+  // 添加分组
+  ipcMain.handle('groups:add', (_event, config) => {
+    const rawConfig = config && typeof config === 'object' ? config : {};
+    const name = typeof rawConfig.name === 'string' ? rawConfig.name.trim() : '';
+    const requestedIds = Array.isArray(rawConfig.modelIds) ? rawConfig.modelIds.map(String) : [];
+    const validIds = new Set(loadModels().map((model) => model.id));
+    const modelIds = Array.from(new Set(requestedIds.filter((id) => validIds.has(id))));
+
+    if (!name || modelIds.length === 0) {
+      return null;
+    }
+
+    const groups = loadGroups();
+    const newGroup = {
+      id: generateGroupId(name),
+      name,
+      modelIds,
+    };
+
+    groups.push(newGroup);
+    saveGroups(groups);
+    mainWindow.webContents.send('groups:updated', groups);
+    return newGroup;
+  });
+
+  // 删除分组
+  ipcMain.handle('groups:remove', (_event, id) => {
+    const groups = loadGroups().filter((group) => group.id !== id);
+    saveGroups(groups);
+    mainWindow.webContents.send('groups:updated', groups);
     return true;
   });
 
@@ -334,6 +518,11 @@ function registerIPC() {
     return true;
   });
 
+  // 调整分屏列宽比例
+  ipcMain.handle('view:setSplitRatios', (_event, ratios) => {
+    return viewManager.setSplitRatios(ratios);
+  });
+
   // 隐藏/显示所有 WebView（用于弹窗时避免遮挡 HTML 覆盖层）
   ipcMain.handle('view:setVisible', (_event, visible) => {
     if (visible) {
@@ -354,6 +543,11 @@ function registerIPC() {
     const savedSettings = saveSettings(settings);
     await applyProxySettings(savedSettings);
     return savedSettings;
+  });
+
+  // 会话快照读取
+  ipcMain.handle('snapshot:get', () => {
+    return loadSnapshot();
   });
 }
 

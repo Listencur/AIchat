@@ -91,6 +91,102 @@ body {
   background: rgba(124, 124, 255, 0.08);
 }
 
+/* ── 分组列表 ── */
+.group-section {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 0 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.mini-button {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.mini-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(124, 124, 255, 0.08);
+}
+
+.group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.group-item {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.group-item:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.group-item.active {
+  color: var(--text-primary);
+  background: var(--bg-active);
+  border-color: var(--border-color);
+}
+
+.group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-count {
+  color: var(--text-secondary);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.group-remove {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.group-remove:hover {
+  color: var(--danger);
+  background: rgba(224, 85, 106, 0.12);
+}
+
 /* ── 模型列表 ── */
 .model-list {
   flex: 1;
@@ -262,6 +358,53 @@ body {
   /* WebView 会覆盖在此区域上方 */
 }
 
+.split-resizers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.split-resizers[hidden] {
+  display: none;
+}
+
+.split-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: col-resize;
+  pointer-events: auto;
+  background: rgba(30, 30, 46, 0.72);
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid rgba(0, 0, 0, 0.28);
+}
+
+.split-resizer::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 44px;
+  border-radius: 2px;
+  background: var(--text-secondary);
+  transform: translate(-50%, -50%);
+  opacity: 0.65;
+}
+
+.split-resizer:hover,
+.split-resizer.dragging {
+  background: rgba(124, 124, 255, 0.18);
+}
+
+.split-resizer:hover::after,
+.split-resizer.dragging::after {
+  background: var(--accent);
+  opacity: 1;
+}
+
 .main-placeholder {
   position: absolute;
   inset: 0;
@@ -311,6 +454,10 @@ body {
 
 .modal-settings {
   width: 460px;
+}
+
+.modal-group {
+  width: 440px;
 }
 
 .modal-header {
@@ -388,7 +535,8 @@ body {
   margin-bottom: 2px;
 }
 
-.radio-row {
+.radio-row,
+.toggle-row {
   display: flex;
   align-items: flex-start;
   gap: 10px;
@@ -399,27 +547,32 @@ body {
   background: rgba(255, 255, 255, 0.02);
 }
 
-.radio-row:hover {
+.radio-row:hover,
+.toggle-row:hover {
   border-color: var(--accent);
 }
 
-.radio-row input {
+.radio-row input,
+.toggle-row input {
   margin-top: 2px;
 }
 
-.radio-row span {
+.radio-row span,
+.toggle-row span {
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
 
-.radio-row strong {
+.radio-row strong,
+.toggle-row strong {
   font-size: 13px;
   color: var(--text-primary);
   font-weight: 600;
 }
 
-.radio-row small {
+.radio-row small,
+.toggle-row small {
   font-size: 12px;
   color: var(--text-secondary);
 }
@@ -430,6 +583,31 @@ body {
 
 .proxy-url-row.is-disabled {
   opacity: 0.45;
+}
+
+.check-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-input);
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.check-row input {
+  flex-shrink: 0;
 }
 
 .form-row input[type="color"] {

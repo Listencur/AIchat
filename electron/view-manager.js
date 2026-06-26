@@ -4,6 +4,7 @@ const { WebContentsView } = require('electron');
 
 // ⚠️ 此值必须与 src/css/style.css 中 --sidebar-width 保持一致
 const SIDEBAR_WIDTH = 240;
+const SPLIT_GUTTER_WIDTH = 10;
 const DEBUG = process.argv.includes('--dev');
 
 function debugLog(...args) {
@@ -23,7 +24,7 @@ function debugError(...args) {
  * 每个模型对应一个独立 View，通过 setVisible 切换显隐，不销毁状态。
  */
 class ViewManager {
-  constructor(win, proxyConfig = { proxyMode: 'system', proxyUrl: '' }) {
+  constructor(win, proxyConfig = { proxyMode: 'system', proxyUrl: '' }, restoreSnapshot = null) {
     this.win = win;
     /** @type {Map<string, {view: WebContentsView, model: object}>} */
     this.views = new Map();
@@ -31,6 +32,13 @@ class ViewManager {
     this.proxyConfig = proxyConfig;
     this.splitMode = false;
     this.splitIds = [];
+    this.splitRatios = [];
+    this.restoreEntries = this.createRestoreEntryMap(restoreSnapshot);
+  }
+
+  createRestoreEntryMap(snapshot) {
+    const entries = snapshot && Array.isArray(snapshot.entries) ? snapshot.entries : [];
+    return new Map(entries.map((entry) => [entry.modelId, entry]));
   }
 
   createProxyOptions() {
@@ -96,8 +104,23 @@ class ViewManager {
     view.webContents.on('did-start-loading', () => {
       debugLog(`[${model.name}] loading started`);
     });
+    const restoreEntry = this.restoreEntries.get(model.id);
+    let didRestoreScroll = false;
+
     view.webContents.on('did-finish-load', () => {
       debugLog(`[${model.name}] loading finished`);
+
+      if (didRestoreScroll || !restoreEntry || restoreEntry.scrollY <= 0) {
+        return;
+      }
+
+      didRestoreScroll = true;
+      setTimeout(() => {
+        if (view.webContents.isDestroyed()) return;
+        view.webContents
+          .executeJavaScript(`window.scrollTo(0, ${Math.floor(restoreEntry.scrollY)});`, false)
+          .catch((error) => debugError(`[${model.name}] restore scroll failed`, error));
+      }, 600);
     });
     view.webContents.on('did-fail-load', (_e, errorCode, errorDesc) => {
       debugError(`[${model.name}] loading failed: ${errorCode} - ${errorDesc}`);
@@ -128,9 +151,26 @@ class ViewManager {
       callback({ requestHeaders: details.requestHeaders });
     });
 
-    view.webContents.loadURL(model.url);
+    view.webContents.loadURL(this.getInitialUrl(model, restoreEntry));
 
     return view;
+  }
+
+  getInitialUrl(model, restoreEntry) {
+    if (!restoreEntry || typeof restoreEntry.url !== 'string') {
+      return model.url;
+    }
+
+    try {
+      const url = new URL(restoreEntry.url);
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        return restoreEntry.url;
+      }
+    } catch {
+      return model.url;
+    }
+
+    return model.url;
   }
 
   /**
@@ -140,6 +180,7 @@ class ViewManager {
   async switchTo(modelId, model) {
     this.splitMode = false;
     this.splitIds = [];
+    this.splitRatios = [];
 
     // 隐藏所有 View
     for (const [, entry] of this.views) {
@@ -175,6 +216,7 @@ class ViewManager {
 
     this.splitMode = true;
     this.splitIds = models.map((model) => model.id);
+    this.splitRatios = models.map(() => 1 / models.length);
     this.activeId = this.splitIds[0];
 
     for (const model of models) {
@@ -194,6 +236,7 @@ class ViewManager {
 
     this.splitMode = false;
     this.splitIds = [];
+    this.splitRatios = [];
 
     for (const [, entry] of this.views) {
       entry.view.setVisible(false);
@@ -240,20 +283,68 @@ class ViewManager {
 
     const [width, height] = this.win.getContentSize();
     const availableWidth = Math.max(0, width - SIDEBAR_WIDTH);
-    const columnWidth = Math.floor(availableWidth / this.splitIds.length);
+    const gutterTotal = SPLIT_GUTTER_WIDTH * (this.splitIds.length - 1);
+    const contentWidth = Math.max(0, availableWidth - gutterTotal);
+    const ratios = this.getNormalizedSplitRatios();
+    let x = SIDEBAR_WIDTH;
 
     this.splitIds.forEach((id, index) => {
       const entry = this.views.get(id);
       if (!entry) return;
 
       const isLast = index === this.splitIds.length - 1;
+      const columnWidth = isLast
+        ? SIDEBAR_WIDTH + availableWidth - x
+        : Math.floor(contentWidth * ratios[index]);
+
       entry.view.setBounds({
-        x: SIDEBAR_WIDTH + columnWidth * index,
+        x,
         y: 0,
-        width: isLast ? availableWidth - columnWidth * index : columnWidth,
+        width: Math.max(0, columnWidth),
         height,
       });
+
+      x += columnWidth + SPLIT_GUTTER_WIDTH;
     });
+  }
+
+  /**
+   * 更新分屏列宽比例。
+   */
+  setSplitRatios(ratios) {
+    if (!this.splitMode || !Array.isArray(ratios) || ratios.length !== this.splitIds.length) {
+      return false;
+    }
+
+    const validRatios = ratios.map((ratio) => Number(ratio)).filter((ratio) => ratio > 0);
+    if (validRatios.length !== ratios.length) {
+      return false;
+    }
+
+    const total = validRatios.reduce((sum, ratio) => sum + ratio, 0);
+    if (total <= 0) {
+      return false;
+    }
+
+    this.splitRatios = validRatios.map((ratio) => ratio / total);
+    this.updateSplitBounds();
+    return true;
+  }
+
+  /**
+   * 获取当前分屏比例；缺失或异常时回退到均分。
+   */
+  getNormalizedSplitRatios() {
+    if (!Array.isArray(this.splitRatios) || this.splitRatios.length !== this.splitIds.length) {
+      return this.splitIds.map(() => 1 / this.splitIds.length);
+    }
+
+    const total = this.splitRatios.reduce((sum, ratio) => sum + ratio, 0);
+    if (total <= 0) {
+      return this.splitIds.map(() => 1 / this.splitIds.length);
+    }
+
+    return this.splitRatios.map((ratio) => ratio / total);
   }
 
   /**
@@ -268,6 +359,57 @@ class ViewManager {
   }
 
   /**
+   * 生成当前会话快照。只保存页面位置，不触碰 Cookie/LocalStorage 等登录态。
+   */
+  async snapshot() {
+    const entries = [];
+
+    for (const [modelId, entry] of this.views) {
+      const { webContents } = entry.view;
+      if (webContents.isDestroyed()) continue;
+
+      const url = webContents.getURL();
+      if (!this.isSnapshotUrl(url)) continue;
+
+      let scrollY = 0;
+      try {
+        scrollY = await webContents.executeJavaScript('Math.max(0, Math.floor(window.scrollY || 0));', false);
+      } catch (error) {
+        debugError(`[${entry.model.name}] snapshot scroll failed`, error);
+      }
+
+      entries.push({
+        modelId,
+        url,
+        scrollY: Math.max(0, Number(scrollY) || 0),
+      });
+    }
+
+    return {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      activeModelId: this.activeId || '',
+      splitMode: this.splitMode,
+      splitIds: this.splitMode ? this.splitIds.slice() : [],
+      splitRatios: this.splitMode ? this.getNormalizedSplitRatios() : [],
+      entries,
+    };
+  }
+
+  isSnapshotUrl(url) {
+    if (typeof url !== 'string' || !url) {
+      return false;
+    }
+
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * 移除并销毁某个模型的 View。
    */
   removeView(modelId) {
@@ -278,6 +420,7 @@ class ViewManager {
     entry.view.webContents.destroy();
     this.views.delete(modelId);
     this.splitIds = this.splitIds.filter((id) => id !== modelId);
+    this.splitRatios = this.splitIds.map(() => 1 / Math.max(1, this.splitIds.length));
 
     if (this.activeId === modelId) {
       this.activeId = null;

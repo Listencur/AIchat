@@ -13,6 +13,7 @@
   const form = document.getElementById('settingsForm');
   const proxyUrlRow = document.getElementById('proxyUrlRow');
   const proxyUrlInput = document.getElementById('inputProxyUrl');
+  const restoreSnapshotInput = document.getElementById('inputRestoreSnapshot');
 
   function getSelectedProxyMode() {
     const selected = form.querySelector('input[name="proxyMode"]:checked');
@@ -32,6 +33,7 @@
 
     (modeInput || fallbackInput).checked = true;
     proxyUrlInput.value = settings.proxyUrl || 'http://127.0.0.1:7897';
+    restoreSnapshotInput.checked = settings.restoreSnapshot === true;
     updateProxyUrlState();
   }
 
@@ -57,7 +59,11 @@
       return;
     }
 
-    await window.api.settings.set({ proxyMode, proxyUrl });
+    await window.api.settings.set({
+      proxyMode,
+      proxyUrl,
+      restoreSnapshot: restoreSnapshotInput.checked,
+    });
     closeModal();
   }
 

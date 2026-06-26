@@ -15,6 +15,14 @@
         <button class="icon-button" id="btnSettings" title="设置" aria-label="设置">⚙</button>
       </div>
 
+      <section class="group-section">
+        <div class="section-header">
+          <span>场景</span>
+          <button class="mini-button" id="btnAddGroup" type="button" title="添加分组" aria-label="添加分组">+</button>
+        </div>
+        <nav class="group-list" id="groupList"></nav>
+      </section>
+
       <nav class="model-list" id="modelList">
         <!-- 模型项由 renderer.js 动态渲染 -->
       </nav>
@@ -45,7 +53,32 @@
           <p>从左侧选择一个 AI 模型开始对话</p>
         </div>
       </div>
+      <div class="split-resizers" id="splitResizers" hidden></div>
     </main>
+  </div>
+
+  <!-- ── 添加分组弹窗 ── -->
+  <div class="modal-overlay" id="modalAddGroup">
+    <div class="modal modal-group">
+      <div class="modal-header">
+        <h2>添加场景分组</h2>
+        <button class="modal-close" id="btnCloseGroupModal">&times;</button>
+      </div>
+      <form class="modal-body" id="addGroupForm">
+        <label class="form-row">
+          <span class="form-label">名称</span>
+          <input type="text" id="inputGroupName" name="name" placeholder="如：编程组" required maxlength="30" />
+        </label>
+        <div class="form-row">
+          <span class="form-label">模型</span>
+          <div class="check-list" id="groupModelChecks"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-cancel" id="btnCancelGroupAdd">取消</button>
+          <button type="submit" class="btn-confirm">添加</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <!-- ── 设置弹窗 ── -->
@@ -81,6 +114,16 @@
             <span>
               <strong>直连</strong>
               <small>不使用代理</small>
+            </span>
+          </label>
+        </fieldset>
+        <fieldset class="settings-group">
+          <legend>会话</legend>
+          <label class="toggle-row">
+            <input type="checkbox" id="inputRestoreSnapshot" name="restoreSnapshot" />
+            <span>
+              <strong>启动时恢复上次会话</strong>
+              <small>恢复上次打开的模型、分屏布局和页面位置</small>
             </span>
           </label>
         </fieldset>
