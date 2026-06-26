@@ -304,6 +304,36 @@ function registerIPC() {
     return true;
   });
 
+  // 进入分屏模式
+  ipcMain.handle('view:enterSplit', async (_event, modelIds) => {
+    if (!Array.isArray(modelIds) || modelIds.length < 2 || modelIds.length > 3) {
+      return false;
+    }
+
+    const models = loadModels();
+    const selectedModels = modelIds
+      .map((id) => models.find((model) => model.id === id))
+      .filter(Boolean);
+
+    if (selectedModels.length !== modelIds.length) {
+      return false;
+    }
+
+    const ok = await viewManager.enterSplit(selectedModels);
+    if (ok) {
+      mainWindow.webContents.send('view:splitChanged', { enabled: true, ids: modelIds });
+      mainWindow.webContents.send('view:switched', { id: selectedModels[0].id });
+    }
+    return ok;
+  });
+
+  // 退出分屏模式
+  ipcMain.handle('view:exitSplit', () => {
+    viewManager.exitSplit();
+    mainWindow.webContents.send('view:splitChanged', { enabled: false, ids: [] });
+    return true;
+  });
+
   // 隐藏/显示所有 WebView（用于弹窗时避免遮挡 HTML 覆盖层）
   ipcMain.handle('view:setVisible', (_event, visible) => {
     if (visible) {

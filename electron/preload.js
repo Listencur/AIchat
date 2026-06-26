@@ -34,6 +34,12 @@ contextBridge.exposeInMainWorld('api', {
     /** 刷新当前视图 */
     refresh: () => ipcRenderer.invoke('view:refresh'),
 
+    /** 进入分屏模式 */
+    enterSplit: (ids) => ipcRenderer.invoke('view:enterSplit', ids),
+
+    /** 退出分屏模式 */
+    exitSplit: () => ipcRenderer.invoke('view:exitSplit'),
+
     /** 隐藏/显示所有 WebView（弹窗时隐藏，关闭时恢复） */
     setVisible: (visible) => ipcRenderer.invoke('view:setVisible', visible),
 
@@ -42,6 +48,13 @@ contextBridge.exposeInMainWorld('api', {
       const handler = (_event, data) => callback(data);
       ipcRenderer.on('view:switched', handler);
       return () => ipcRenderer.removeListener('view:switched', handler);
+    },
+
+    /** 监听分屏状态变化 */
+    onSplitChanged: (callback) => {
+      const handler = (_event, data) => callback(data);
+      ipcRenderer.on('view:splitChanged', handler);
+      return () => ipcRenderer.removeListener('view:splitChanged', handler);
     },
   },
 

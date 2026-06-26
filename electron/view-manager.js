@@ -29,6 +29,8 @@ class ViewManager {
     this.views = new Map();
     this.activeId = null;
     this.proxyConfig = proxyConfig;
+    this.splitMode = false;
+    this.splitIds = [];
   }
 
   createProxyOptions() {
@@ -136,6 +138,9 @@ class ViewManager {
    * 隐藏当前 View，显示目标 View 并更新 bounds。
    */
   async switchTo(modelId, model) {
+    this.splitMode = false;
+    this.splitIds = [];
+
     // 隐藏所有 View
     for (const [, entry] of this.views) {
       entry.view.setVisible(false);
@@ -153,6 +158,48 @@ class ViewManager {
     this.updateBounds(modelId);
 
     this.activeId = modelId;
+  }
+
+  /**
+   * 进入分屏模式，同时显示 2-3 个模型。
+   */
+  async enterSplit(models) {
+    if (!Array.isArray(models) || models.length < 2 || models.length > 3) {
+      console.error('[ViewManager] split mode requires 2-3 models');
+      return false;
+    }
+
+    for (const [, entry] of this.views) {
+      entry.view.setVisible(false);
+    }
+
+    this.splitMode = true;
+    this.splitIds = models.map((model) => model.id);
+    this.activeId = this.splitIds[0];
+
+    for (const model of models) {
+      const view = await this.ensureView(model);
+      view.setVisible(true);
+    }
+
+    this.updateSplitBounds();
+    return true;
+  }
+
+  /**
+   * 退出分屏模式，恢复当前活跃单视图。
+   */
+  exitSplit() {
+    if (!this.splitMode) return;
+
+    this.splitMode = false;
+    this.splitIds = [];
+
+    for (const [, entry] of this.views) {
+      entry.view.setVisible(false);
+    }
+
+    this.showActive();
   }
 
   /**
@@ -175,9 +222,38 @@ class ViewManager {
    * 窗口 resize 时重算所有可见 View 的 bounds。
    */
   resizeAll() {
+    if (this.splitMode) {
+      this.updateSplitBounds();
+      return;
+    }
+
     for (const [id] of this.views) {
       this.updateBounds(id);
     }
+  }
+
+  /**
+   * 更新分屏模式下多个 View 的位置和大小。
+   */
+  updateSplitBounds() {
+    if (!this.splitMode || this.splitIds.length === 0) return;
+
+    const [width, height] = this.win.getContentSize();
+    const availableWidth = Math.max(0, width - SIDEBAR_WIDTH);
+    const columnWidth = Math.floor(availableWidth / this.splitIds.length);
+
+    this.splitIds.forEach((id, index) => {
+      const entry = this.views.get(id);
+      if (!entry) return;
+
+      const isLast = index === this.splitIds.length - 1;
+      entry.view.setBounds({
+        x: SIDEBAR_WIDTH + columnWidth * index,
+        y: 0,
+        width: isLast ? availableWidth - columnWidth * index : columnWidth,
+        height,
+      });
+    });
   }
 
   /**
@@ -201,9 +277,14 @@ class ViewManager {
     this.win.contentView.removeChildView(entry.view);
     entry.view.webContents.destroy();
     this.views.delete(modelId);
+    this.splitIds = this.splitIds.filter((id) => id !== modelId);
 
     if (this.activeId === modelId) {
       this.activeId = null;
+    }
+
+    if (this.splitMode && this.splitIds.length < 2) {
+      this.exitSplit();
     }
   }
 
@@ -220,6 +301,17 @@ class ViewManager {
    * 恢复显示当前活跃 View（弹窗关闭后调用）。
    */
   showActive() {
+    if (this.splitMode) {
+      for (const id of this.splitIds) {
+        const entry = this.views.get(id);
+        if (entry) {
+          entry.view.setVisible(true);
+        }
+      }
+      this.updateSplitBounds();
+      return;
+    }
+
     if (!this.activeId) return;
     const entry = this.views.get(this.activeId);
     if (entry) {
