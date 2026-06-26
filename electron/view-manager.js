@@ -4,6 +4,19 @@ const { WebContentsView } = require('electron');
 
 // ⚠️ 此值必须与 src/css/style.css 中 --sidebar-width 保持一致
 const SIDEBAR_WIDTH = 240;
+const DEBUG = process.argv.includes('--dev');
+
+function debugLog(...args) {
+  if (DEBUG) {
+    console.log(...args);
+  }
+}
+
+function debugError(...args) {
+  if (DEBUG) {
+    console.error(...args);
+  }
+}
 
 /**
  * ViewManager — 管理多个 WebContentsView 的创建、切换、隐藏和 resize。
@@ -38,11 +51,11 @@ class ViewManager {
 
     if (this.proxyConfig.proxyMode === 'custom') {
       const proxyUsed = await ses.resolveProxy(model.url);
-      console.log(`[${model.name}] proxy: ${proxyUsed} -> ${model.url}`);
+      debugLog(`[${model.name}] proxy: ${proxyUsed} -> ${model.url}`);
       return;
     }
 
-    console.log(`[${model.name}] proxy: ${this.proxyConfig.proxyMode} -> ${model.url}`);
+    debugLog(`[${model.name}] proxy: ${this.proxyConfig.proxyMode} -> ${model.url}`);
   }
 
   async setProxyConfig(proxyConfig) {
@@ -79,16 +92,16 @@ class ViewManager {
 
     // ── 调试日志：排查白屏问题 ──
     view.webContents.on('did-start-loading', () => {
-      console.log(`[${model.name}] loading started`);
+      debugLog(`[${model.name}] loading started`);
     });
     view.webContents.on('did-finish-load', () => {
-      console.log(`[${model.name}] loading finished`);
+      debugLog(`[${model.name}] loading finished`);
     });
     view.webContents.on('did-fail-load', (_e, errorCode, errorDesc) => {
-      console.error(`[${model.name}] loading failed: ${errorCode} - ${errorDesc}`);
+      debugError(`[${model.name}] loading failed: ${errorCode} - ${errorDesc}`);
     });
     view.webContents.on('did-stop-loading', () => {
-      console.log(`[${model.name}] loading stopped`);
+      debugLog(`[${model.name}] loading stopped`);
     });
 
     // 添加到窗口（在上层，覆盖 HTML 的侧边栏右侧区域）
