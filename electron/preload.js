@@ -44,4 +44,13 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.removeListener('view:switched', handler);
     },
   },
+
+  // ── 设置 ──
+  settings: {
+    /** 获取应用设置 */
+    get: () => ipcRenderer.invoke('settings:get'),
+
+    /** 保存应用设置 */
+    set: (settings) => ipcRenderer.invoke('settings:set', settings),
+  },
 });

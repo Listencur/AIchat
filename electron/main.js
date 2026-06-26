@@ -13,8 +13,6 @@ let viewManager = null;
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 const diskCachePath = path.join(app.getPath('temp'), 'ai-chat-hub-cache');
 
-// 全局代理：走 Clash（端口 7897），必须在 app.ready 之前设置
-app.commandLine.appendSwitch('proxy-server', 'http://127.0.0.1:7897');
 // 反自动化检测：移除 navigator.webdriver 标记，绕过 Cloudflare bot 检测
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
 // 避免 Chromium 磁盘缓存/GPU 缓存目录迁移或创建失败时刷屏。
@@ -27,6 +25,12 @@ app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 
 const defaultModelsPath = path.join(__dirname, '..', 'data', 'models.json');
 const userModelsPath = path.join(app.getPath('userData'), 'models.json');
+const userSettingsPath = path.join(app.getPath('userData'), 'settings.json');
+const DEFAULT_SETTINGS = {
+  proxyMode: 'system',
+  proxyUrl: 'http://127.0.0.1:7897',
+};
+const PROXY_URL_PATTERN = /^(https?|socks5?):\/\/.+/;
 
 function readJsonFile(filePath, fallback) {
   try {
@@ -35,6 +39,59 @@ function readJsonFile(filePath, fallback) {
     console.error(`[main] Failed to read JSON: ${filePath}`, error);
     return fallback;
   }
+}
+
+function normalizeSettings(settings) {
+  const rawSettings = settings && typeof settings === 'object' ? settings : {};
+  const proxyMode = ['system', 'custom', 'direct'].includes(rawSettings.proxyMode)
+    ? rawSettings.proxyMode
+    : DEFAULT_SETTINGS.proxyMode;
+  const proxyUrl = typeof rawSettings.proxyUrl === 'string' && PROXY_URL_PATTERN.test(rawSettings.proxyUrl.trim())
+    ? rawSettings.proxyUrl.trim()
+    : DEFAULT_SETTINGS.proxyUrl;
+
+  return { proxyMode, proxyUrl };
+}
+
+function loadSettings() {
+  if (!fs.existsSync(userSettingsPath)) {
+    saveSettings(DEFAULT_SETTINGS);
+    return { ...DEFAULT_SETTINGS };
+  }
+
+  return normalizeSettings(readJsonFile(userSettingsPath, DEFAULT_SETTINGS));
+}
+
+function saveSettings(settings) {
+  const normalized = normalizeSettings(settings);
+  fs.writeFileSync(userSettingsPath, JSON.stringify(normalized, null, 2), 'utf-8');
+  return normalized;
+}
+
+function createProxyOptions(settings) {
+  if (settings.proxyMode === 'direct') {
+    return { mode: 'direct' };
+  }
+
+  if (settings.proxyMode === 'custom') {
+    return {
+      mode: 'fixed_servers',
+      proxyRules: settings.proxyUrl,
+    };
+  }
+
+  return { mode: 'system' };
+}
+
+async function applyProxySettings(settings) {
+  const normalized = normalizeSettings(settings);
+  await session.defaultSession.setProxy(createProxyOptions(normalized));
+
+  if (viewManager) {
+    await viewManager.setProxyConfig(normalized);
+  }
+
+  return normalized;
 }
 
 function readDefaultModelsData() {
@@ -158,7 +215,7 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, '..', 'src', 'index.html'));
 
   // 初始化 ViewManager
-  viewManager = new ViewManager(mainWindow);
+  viewManager = new ViewManager(mainWindow, loadSettings());
 
   // 窗口 resize 时重新计算所有 View 的 bounds
   mainWindow.on('resize', () => {
@@ -256,6 +313,18 @@ function registerIPC() {
     }
     return true;
   });
+
+  // 设置读取
+  ipcMain.handle('settings:get', () => {
+    return loadSettings();
+  });
+
+  // 设置保存
+  ipcMain.handle('settings:set', async (_event, settings) => {
+    const savedSettings = saveSettings(settings);
+    await applyProxySettings(savedSettings);
+    return savedSettings;
+  });
 }
 
 // ── 应用生命周期 ──
@@ -273,8 +342,7 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
-    // 默认 session 也设代理（partition session 可能不继承全局开关）
-    await session.defaultSession.setProxy({ proxyRules: 'http://127.0.0.1:7897' });
+    await applyProxySettings(loadSettings());
 
     createWindow();
     registerIPC();

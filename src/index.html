@@ -12,6 +12,7 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <span class="sidebar-title">AI 对话聚合</span>
+        <button class="icon-button" id="btnSettings" title="设置" aria-label="设置">⚙</button>
       </div>
 
       <nav class="model-list" id="modelList">
@@ -35,6 +36,50 @@
         </div>
       </div>
     </main>
+  </div>
+
+  <!-- ── 设置弹窗 ── -->
+  <div class="modal-overlay" id="modalSettings">
+    <div class="modal modal-settings">
+      <div class="modal-header">
+        <h2>设置</h2>
+        <button class="modal-close" id="btnCloseSettings">&times;</button>
+      </div>
+      <form class="modal-body" id="settingsForm">
+        <fieldset class="settings-group">
+          <legend>代理</legend>
+          <label class="radio-row">
+            <input type="radio" name="proxyMode" value="system" />
+            <span>
+              <strong>系统代理</strong>
+              <small>默认使用系统网络代理设置</small>
+            </span>
+          </label>
+          <label class="radio-row">
+            <input type="radio" name="proxyMode" value="custom" />
+            <span>
+              <strong>自定义代理</strong>
+              <small>例如 http://127.0.0.1:7897</small>
+            </span>
+          </label>
+          <label class="form-row proxy-url-row" id="proxyUrlRow">
+            <span class="form-label">代理地址</span>
+            <input type="text" id="inputProxyUrl" name="proxyUrl" placeholder="http://127.0.0.1:7897" />
+          </label>
+          <label class="radio-row">
+            <input type="radio" name="proxyMode" value="direct" />
+            <span>
+              <strong>直连</strong>
+              <small>不使用代理</small>
+            </span>
+          </label>
+        </fieldset>
+        <div class="modal-footer">
+          <button type="button" class="btn-cancel" id="btnCancelSettings">取消</button>
+          <button type="submit" class="btn-confirm">保存</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <!-- ── 添加模型弹窗 ── -->
@@ -69,6 +114,7 @@
     </div>
   </div>
 
+  <script src="js/settings.js"></script>
   <script src="js/add-model.js"></script>
   <script src="js/renderer.js"></script>
 </body>

@@ -1,23 +1,56 @@
 'use strict';
 
-const { WebContentsView, session } = require('electron');
+const { WebContentsView } = require('electron');
 
 // ⚠️ 此值必须与 src/css/style.css 中 --sidebar-width 保持一致
 const SIDEBAR_WIDTH = 240;
-
-// ⚠️ Clash 代理端口，按需修改。设为 null 则不走代理
-const PROXY_URL = 'http://127.0.0.1:7897';
 
 /**
  * ViewManager — 管理多个 WebContentsView 的创建、切换、隐藏和 resize。
  * 每个模型对应一个独立 View，通过 setVisible 切换显隐，不销毁状态。
  */
 class ViewManager {
-  constructor(win) {
+  constructor(win, proxyConfig = { proxyMode: 'system', proxyUrl: '' }) {
     this.win = win;
     /** @type {Map<string, {view: WebContentsView, model: object}>} */
     this.views = new Map();
     this.activeId = null;
+    this.proxyConfig = proxyConfig;
+  }
+
+  createProxyOptions() {
+    if (this.proxyConfig.proxyMode === 'direct') {
+      return { mode: 'direct' };
+    }
+
+    if (this.proxyConfig.proxyMode === 'custom') {
+      return {
+        mode: 'fixed_servers',
+        proxyRules: this.proxyConfig.proxyUrl,
+      };
+    }
+
+    return { mode: 'system' };
+  }
+
+  async applyProxyToSession(ses, model) {
+    await ses.setProxy(this.createProxyOptions());
+
+    if (this.proxyConfig.proxyMode === 'custom') {
+      const proxyUsed = await ses.resolveProxy(model.url);
+      console.log(`[${model.name}] proxy: ${proxyUsed} -> ${model.url}`);
+      return;
+    }
+
+    console.log(`[${model.name}] proxy: ${this.proxyConfig.proxyMode} -> ${model.url}`);
+  }
+
+  async setProxyConfig(proxyConfig) {
+    this.proxyConfig = proxyConfig;
+
+    for (const [, entry] of this.views) {
+      await this.applyProxyToSession(entry.view.webContents.session, entry.model);
+    }
   }
 
   /**
@@ -67,16 +100,9 @@ class ViewManager {
 
     this.views.set(model.id, { view, model });
 
-    // 设置代理后再加载 URL（确保走 Clash 代理）
+    // 设置代理后再加载 URL。
     const ses = view.webContents.session;
-    if (PROXY_URL) {
-      await ses.setProxy({ proxyRules: PROXY_URL });
-      // 验证代理是否生效
-      const proxyUsed = await ses.resolveProxy(model.url);
-      console.log(`[${model.name}] proxy: ${proxyUsed} -> ${model.url}`);
-    } else {
-      console.log(`[${model.name}] proxy disabled -> ${model.url}`);
-    }
+    await this.applyProxyToSession(ses, model);
 
     // 伪装 sec-ch-ua 头，移除 Electron 品牌标识（Cloudflare 关键检测点）
     const chromeVer = defaultUA.match(/Chrome\/([\d]+)/)?.[1] || '130';
