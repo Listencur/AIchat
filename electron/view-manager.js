@@ -46,16 +46,16 @@ class ViewManager {
 
     // ── 调试日志：排查白屏问题 ──
     view.webContents.on('did-start-loading', () => {
-      console.log(`[${model.name}] 开始加载...`);
+      console.log(`[${model.name}] loading started`);
     });
     view.webContents.on('did-finish-load', () => {
-      console.log(`[${model.name}] 加载完成 ✓`);
+      console.log(`[${model.name}] loading finished`);
     });
     view.webContents.on('did-fail-load', (_e, errorCode, errorDesc) => {
-      console.error(`[${model.name}] 加载失败: ${errorCode} - ${errorDesc}`);
+      console.error(`[${model.name}] loading failed: ${errorCode} - ${errorDesc}`);
     });
     view.webContents.on('did-stop-loading', () => {
-      console.log(`[${model.name}] 停止加载`);
+      console.log(`[${model.name}] loading stopped`);
     });
 
     // 添加到窗口（在上层，覆盖 HTML 的侧边栏右侧区域）
@@ -73,9 +73,9 @@ class ViewManager {
       await ses.setProxy({ proxyRules: PROXY_URL });
       // 验证代理是否生效
       const proxyUsed = await ses.resolveProxy(model.url);
-      console.log(`[${model.name}] 代理状态: ${proxyUsed} → 加载 ${model.url}`);
+      console.log(`[${model.name}] proxy: ${proxyUsed} -> ${model.url}`);
     } else {
-      console.log(`[${model.name}] 无代理 → 加载 ${model.url}`);
+      console.log(`[${model.name}] proxy disabled -> ${model.url}`);
     }
 
     // 伪装 sec-ch-ua 头，移除 Electron 品牌标识（Cloudflare 关键检测点）
@@ -86,10 +86,6 @@ class ViewManager {
       details.requestHeaders['sec-ch-ua-platform'] = '"Windows"';
       callback({ requestHeaders: details.requestHeaders });
     });
-
-    // 清除旧的 session 数据（避免过期 cookie 导致连接被拒）
-    await ses.clearAuthCache();
-    await ses.clearCache();
 
     view.webContents.loadURL(model.url);
 
@@ -109,7 +105,7 @@ class ViewManager {
     // 确保目标 View 存在（懒创建）
     const targetModel = model || (this.views.has(modelId) ? this.views.get(modelId).model : null);
     if (!targetModel) {
-      console.error(`[ViewManager] 模型不存在: ${modelId}`);
+      console.error(`[ViewManager] model not found: ${modelId}`);
       return;
     }
 

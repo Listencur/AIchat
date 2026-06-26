@@ -10,35 +10,122 @@ let mainWindow = null;
 /** @type {ViewManager} */
 let viewManager = null;
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+const diskCachePath = path.join(app.getPath('temp'), 'ai-chat-hub-cache');
+
 // 全局代理：走 Clash（端口 7897），必须在 app.ready 之前设置
 app.commandLine.appendSwitch('proxy-server', 'http://127.0.0.1:7897');
 // 反自动化检测：移除 navigator.webdriver 标记，绕过 Cloudflare bot 检测
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
+// 避免 Chromium 磁盘缓存/GPU 缓存目录迁移或创建失败时刷屏。
+app.commandLine.appendSwitch('disk-cache-dir', diskCachePath);
+app.commandLine.appendSwitch('disk-cache-size', '0');
+app.commandLine.appendSwitch('disable-http-cache');
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 
 // ── 模型配置存储 ──
 
 const defaultModelsPath = path.join(__dirname, '..', 'data', 'models.json');
 const userModelsPath = path.join(app.getPath('userData'), 'models.json');
 
+function readJsonFile(filePath, fallback) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  } catch (error) {
+    console.error(`[main] Failed to read JSON: ${filePath}`, error);
+    return fallback;
+  }
+}
+
+function readDefaultModelsData() {
+  const data = readJsonFile(defaultModelsPath, { configVersion: 1, models: [] });
+  return {
+    configVersion: data.configVersion || 1,
+    models: Array.isArray(data.models) ? data.models : [],
+  };
+}
+
+function writeUserModelsData(data) {
+  fs.writeFileSync(userModelsPath, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+function buildInitialUserModelsData(defaultData) {
+  return {
+    configVersion: defaultData.configVersion,
+    models: defaultData.models,
+    removedDefaultModelIds: [],
+  };
+}
+
+function syncUserModelsData(userData, defaultData) {
+  const userModels = Array.isArray(userData.models) ? userData.models : [];
+  const removedDefaultModelIds = Array.isArray(userData.removedDefaultModelIds)
+    ? userData.removedDefaultModelIds
+    : [];
+
+  const defaultIds = new Set(defaultData.models.map((model) => model.id));
+  const removedSet = new Set(removedDefaultModelIds);
+  const userById = new Map(userModels.map((model) => [model.id, model]));
+
+  const models = [];
+
+  for (const defaultModel of defaultData.models) {
+    const existing = userById.get(defaultModel.id);
+    if (existing) {
+      models.push({ ...existing, ...defaultModel });
+    } else if (!removedSet.has(defaultModel.id)) {
+      models.push(defaultModel);
+    }
+  }
+
+  for (const userModel of userModels) {
+    if (!defaultIds.has(userModel.id)) {
+      models.push(userModel);
+    }
+  }
+
+  return {
+    configVersion: defaultData.configVersion,
+    models,
+    removedDefaultModelIds: removedDefaultModelIds.filter((id) => defaultIds.has(id)),
+  };
+}
+
+function readUserModelsData() {
+  const defaultData = readDefaultModelsData();
+
+  if (!fs.existsSync(userModelsPath)) {
+    const initialData = buildInitialUserModelsData(defaultData);
+    writeUserModelsData(initialData);
+    return initialData;
+  }
+
+  const userData = readJsonFile(userModelsPath, buildInitialUserModelsData(defaultData));
+  const syncedData = syncUserModelsData(userData, defaultData);
+
+  if (JSON.stringify(userData) !== JSON.stringify(syncedData)) {
+    writeUserModelsData(syncedData);
+  }
+
+  return syncedData;
+}
+
 /**
  * 加载模型列表。
- * 首次启动时从 data/models.json 拷贝到 userData，之后始终读写 userData 副本。
+ * 首次启动时从 data/models.json 拷贝到 userData。
+ * 后续启动时会按 configVersion 同步默认模型，并保留用户新增模型。
  */
 function loadModels() {
-  if (!fs.existsSync(userModelsPath)) {
-    // 首次启动：拷贝默认配置
-    const defaultData = fs.readFileSync(defaultModelsPath, 'utf-8');
-    fs.writeFileSync(userModelsPath, defaultData, 'utf-8');
-  }
-  const data = JSON.parse(fs.readFileSync(userModelsPath, 'utf-8'));
-  return data.models || [];
+  return readUserModelsData().models;
 }
 
 /**
  * 保存模型列表到 userData。
  */
 function saveModels(models) {
-  fs.writeFileSync(userModelsPath, JSON.stringify({ models }, null, 2), 'utf-8');
+  const data = readUserModelsData();
+  data.models = models;
+  writeUserModelsData(data);
 }
 
 /**
@@ -119,15 +206,22 @@ function registerIPC() {
 
   // 删除模型
   ipcMain.handle('models:remove', (_event, id) => {
-    let models = loadModels();
-    models = models.filter((m) => m.id !== id);
-    saveModels(models);
+    const data = readUserModelsData();
+    const defaultIds = new Set(readDefaultModelsData().models.map((model) => model.id));
+
+    data.models = data.models.filter((m) => m.id !== id);
+
+    if (defaultIds.has(id) && !data.removedDefaultModelIds.includes(id)) {
+      data.removedDefaultModelIds.push(id);
+    }
+
+    writeUserModelsData(data);
 
     // 销毁对应的 View
     if (viewManager) viewManager.removeView(id);
 
     // 通知渲染进程更新
-    mainWindow.webContents.send('models:updated', models);
+    mainWindow.webContents.send('models:updated', data.models);
     return true;
   });
 
@@ -136,7 +230,7 @@ function registerIPC() {
     const models = loadModels();
     const model = models.find((m) => m.id === modelId);
     if (!model) {
-      console.error(`[main] 模型不存在: ${modelId}`);
+      console.error(`[main] model not found: ${modelId}`);
       return false;
     }
 
@@ -166,22 +260,35 @@ function registerIPC() {
 
 // ── 应用生命周期 ──
 
-app.whenReady().then(async () => {
-  // 默认 session 也设代理（partition session 可能不继承全局开关）
-  await session.defaultSession.setProxy({ proxyRules: 'http://127.0.0.1:7897' });
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow) return;
 
-  createWindow();
-  registerIPC();
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.focus();
+  });
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+  app.whenReady().then(async () => {
+    // 默认 session 也设代理（partition session 可能不继承全局开关）
+    await session.defaultSession.setProxy({ proxyRules: 'http://127.0.0.1:7897' });
+
+    createWindow();
+    registerIPC();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit();
     }
   });
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
+}
