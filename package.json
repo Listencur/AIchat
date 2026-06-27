@@ -6,11 +6,37 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "build:launcher": "powershell -ExecutionPolicy Bypass -File scripts/build-launcher.ps1"
+    "build:launcher": "powershell -ExecutionPolicy Bypass -File scripts/build-launcher.ps1",
+    "dist:portable": "electron-builder --win portable"
   },
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^42.0.0"
+    "electron": "^42.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.ai-chat-hub.desktop",
+    "productName": "AI聊天聚合",
+    "directories": {
+      "output": "../AI聊天聚合打包版"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "data/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/app-icon.ico",
+      "target": [
+        "portable"
+      ],
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    }
   }
 }
