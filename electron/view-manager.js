@@ -105,7 +105,7 @@ function buildPromptSubmitScript(prompt) {
   const serializedPrompt = JSON.stringify(prompt);
 
   return `
-(() => {
+(async () => {
   const prompt = ${serializedPrompt};
   const normalize = (value) => String(value || '').toLowerCase();
   const isVisible = (element) => {
@@ -144,7 +144,12 @@ function buildPromptSubmitScript(prompt) {
 
   input.focus();
   if ('value' in input) {
-    input.value = prompt;
+    const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value');
+    if (descriptor && descriptor.set) {
+      descriptor.set.call(input, prompt);
+    } else {
+      input.value = prompt;
+    }
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
   } else {
@@ -154,6 +159,9 @@ function buildPromptSubmitScript(prompt) {
     selection.removeAllRanges();
     selection.addRange(range);
     document.execCommand('insertText', false, prompt);
+    if (!input.textContent || !input.textContent.includes(prompt)) {
+      input.textContent = prompt;
+    }
     input.dispatchEvent(new InputEvent('input', {
       bubbles: true,
       inputType: 'insertText',
