@@ -669,6 +669,10 @@ body::after {
 
 .modal-settings {
   width: 460px;
+  max-height: calc(100vh - 72px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .modal-status {
@@ -711,6 +715,29 @@ body::after {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+#settingsForm {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 14px;
+}
+
+#settingsForm::-webkit-scrollbar {
+  width: 8px;
+}
+
+#settingsForm::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#settingsForm::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 999px;
+}
+
+#settingsForm::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
 }
 
 .form-row {
@@ -1075,6 +1102,17 @@ body::after {
   justify-content: flex-end;
   gap: 10px;
   padding-top: 4px;
+}
+
+#settingsForm .modal-footer {
+  position: sticky;
+  bottom: -20px;
+  margin: 0 -14px -20px 0;
+  padding: 14px 6px 20px 0;
+  background: var(--bg-panel);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border-top: 1px solid var(--border-color);
 }
 
 .btn-cancel,
