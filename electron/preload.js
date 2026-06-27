@@ -144,6 +144,9 @@ contextBridge.exposeInMainWorld('api', {
     /** 隐藏迷你窗口 */
     hide: () => ipcRenderer.invoke('quick:hide'),
 
+    /** 展开/收起快速窗口下拉区域 */
+    setMenuOpen: (open) => ipcRenderer.invoke('quick:setMenuOpen', open),
+
     /** 迷你窗口显示时触发 */
     onShow: (callback) => {
       const handler = () => callback();

@@ -70,6 +70,7 @@ const DEFAULT_QUICK_STATE = {
 const PROXY_URL_PATTERN = /^(https?|socks5?):\/\/.+/;
 const SNAPSHOT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 30;
 const QUICK_HISTORY_LIMIT = 10;
+const QUICK_MODEL_LIMIT = 3;
 const MODIFIER_LABELS = new Map([
   ['CTRL', 'Ctrl'],
   ['CONTROL', 'Ctrl'],
@@ -210,7 +211,7 @@ function normalizeQuickState(state) {
       .map((id) => String(id))
       .filter(Boolean)
       .filter((id, index, list) => list.indexOf(id) === index)
-      .slice(0, 20)
+      .slice(0, QUICK_MODEL_LIMIT)
     : [];
   const lastModelId = typeof raw.lastModelId === 'string' ? raw.lastModelId : '';
 
@@ -829,6 +830,18 @@ async function quitApplication() {
   }
 }
 
+function setQuickMenuOpen(open) {
+  if (!quickWindow || quickWindow.isDestroyed()) {
+    return;
+  }
+
+  const bounds = quickWindow.getBounds();
+  const nextHeight = open === true ? 270 : 150;
+  if (bounds.height !== nextHeight) {
+    quickWindow.setBounds({ ...bounds, height: nextHeight });
+  }
+}
+
 function createQuickWindow() {
   const quickState = loadQuickState();
 
@@ -861,6 +874,7 @@ function createQuickWindow() {
 
   quickWindow.on('blur', () => {
     if (quickWindow && !quickWindow.webContents.isDevToolsOpened() && !loadQuickState().pinned) {
+      setQuickMenuOpen(false);
       quickWindow.hide();
     }
   });
@@ -889,6 +903,7 @@ function showQuickWindow() {
   }
 
   const quickState = loadQuickState();
+  setQuickMenuOpen(false);
   quickWindow.setAlwaysOnTop(quickState.pinned, 'floating');
   quickWindow.center();
   quickWindow.show();
@@ -927,7 +942,8 @@ async function submitQuickAction(payload) {
   const prompt = typeof rawPayload.prompt === 'string' ? rawPayload.prompt.trim() : '';
   const models = loadModels();
   const ids = (requestedIds.length > 0 ? requestedIds : [modelId])
-    .filter((id, index, list) => id && list.indexOf(id) === index);
+    .filter((id, index, list) => id && list.indexOf(id) === index)
+    .slice(0, QUICK_MODEL_LIMIT);
   const selectedModels = ids
     .map((id) => models.find((item) => item.id === id))
     .filter(Boolean);
@@ -956,17 +972,35 @@ async function submitQuickAction(payload) {
   }
 
   const results = [];
+  const targetIds = targetModels.map((model) => model.id);
+  if (targetModels.length >= 2) {
+    const ok = await viewManager.enterSplit(targetModels);
+    if (ok) {
+      mainWindow.webContents.send('view:splitChanged', { enabled: true, ids: targetIds });
+      mainWindow.webContents.send('view:switched', { id: primaryModel.id });
+    }
+  }
+
   for (const model of targetModels) {
-    const submitResult = await viewManager.submitPrompt(model.id, model, prompt);
-    mainWindow.webContents.send('view:switched', { id: model.id });
+    const submitResult = await viewManager.submitPrompt(model.id, model, prompt, {
+      preserveLayout: targetModels.length >= 2,
+    });
+    if (targetModels.length === 1) {
+      mainWindow.webContents.send('view:switched', { id: model.id });
+    }
     results.push({ modelId: model.id, ok: submitResult.ok, submitResult });
+  }
+
+  if (targetModels.length >= 2) {
+    mainWindow.webContents.send('view:splitChanged', { enabled: true, ids: targetIds });
+    mainWindow.webContents.send('view:switched', { id: primaryModel.id });
   }
 
   return {
     ok: results.some((result) => result.ok),
     mode: 'open',
     modelId: primaryModel.id,
-    modelIds: targetModels.map((model) => model.id),
+    modelIds: targetIds,
     results,
   };
 }
@@ -1346,8 +1380,14 @@ function registerIPC() {
 
   ipcMain.handle('quick:hide', () => {
     if (quickWindow) {
+      setQuickMenuOpen(false);
       quickWindow.hide();
     }
+    return true;
+  });
+
+  ipcMain.handle('quick:setMenuOpen', (_event, open) => {
+    setQuickMenuOpen(open);
     return true;
   });
 

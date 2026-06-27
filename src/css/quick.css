@@ -29,13 +29,13 @@ textarea {
 }
 
 .quick-shell {
-  height: calc(100vh - 20px);
+  height: 130px;
   margin: 10px;
   border: 1px solid var(--border);
   border-radius: 36px;
   background: var(--bg);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
-  overflow: hidden;
+  overflow: visible;
   -webkit-app-region: drag;
 }
 
@@ -44,6 +44,7 @@ textarea {
   display: flex;
   flex-direction: column;
   background: var(--panel);
+  border-radius: inherit;
 }
 
 textarea {
@@ -126,9 +127,9 @@ textarea::placeholder {
 .quick-model-menu {
   position: absolute;
   left: 0;
-  bottom: 38px;
+  top: 38px;
   width: min(240px, calc(100vw - 120px));
-  max-height: 88px;
+  max-height: 124px;
   padding: 6px;
   border: 1px solid var(--border);
   border-radius: 12px;

@@ -8,6 +8,7 @@
   const promptInput = document.getElementById('quickPrompt');
   const submitBtn = document.getElementById('btnQuickSubmit');
   const pinBtn = document.getElementById('btnQuickPin');
+  const MAX_SELECTED_MODELS = 3;
   let saveTimer = null;
   let pinned = false;
   let modelsCache = [];
@@ -17,7 +18,7 @@
     const data = await window.api.models.list();
     const models = data.models || data;
     const validIds = new Set(models.map((model) => model.id));
-    const nextSelected = preferredIds.filter((id) => validIds.has(id));
+    const nextSelected = preferredIds.filter((id) => validIds.has(id)).slice(0, MAX_SELECTED_MODELS);
 
     modelsCache = models;
     selectedModelIds = new Set(nextSelected.length > 0 ? nextSelected : (models[0] ? [models[0].id] : []));
@@ -37,7 +38,7 @@
 
   function getSelectedModelIds() {
     const validIds = new Set(modelsCache.map((model) => model.id));
-    return Array.from(selectedModelIds).filter((id) => validIds.has(id));
+    return Array.from(selectedModelIds).filter((id) => validIds.has(id)).slice(0, MAX_SELECTED_MODELS);
   }
 
   function buildStatePatch() {
@@ -88,6 +89,12 @@
 
       input.addEventListener('change', () => {
         if (input.checked) {
+          if (selectedModelIds.size >= MAX_SELECTED_MODELS && !selectedModelIds.has(model.id)) {
+            input.checked = false;
+            modelTrigger.textContent = `最多 ${MAX_SELECTED_MODELS} 个`;
+            setTimeout(renderModelPicker, 700);
+            return;
+          }
           selectedModelIds.add(model.id);
         } else if (selectedModelIds.size > 1) {
           selectedModelIds.delete(model.id);
@@ -108,11 +115,16 @@
 
   function toggleModelMenu() {
     if (modelsCache.length === 0) return;
-    modelMenu.hidden = !modelMenu.hidden;
+    setModelMenuOpen(modelMenu.hidden);
   }
 
   function closeModelMenu() {
-    modelMenu.hidden = true;
+    setModelMenuOpen(false);
+  }
+
+  function setModelMenuOpen(open) {
+    modelMenu.hidden = !open;
+    window.api.quick.setMenuOpen(open);
   }
 
   function scheduleSaveState() {
@@ -152,6 +164,7 @@
       submitMode: 'open',
       pinned,
     });
+    closeModelMenu();
     window.api.quick.hide();
     await window.api.quick.submit(payload);
     submitBtn.disabled = false;
@@ -169,11 +182,13 @@
   }
 
   async function focusPrompt() {
+    closeModelMenu();
     await loadQuickState();
     setTimeout(() => promptInput.focus(), 50);
   }
 
   async function hideQuickWindow() {
+    closeModelMenu();
     await saveStateNow();
     window.api.quick.hide();
   }
@@ -208,6 +223,8 @@
       closeModelMenu();
     }
   });
+
+  window.addEventListener('blur', closeModelMenu);
 
   window.api.models.onUpdated(() => {
     loadModels(getSelectedModelIds());

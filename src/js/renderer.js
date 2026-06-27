@@ -1086,6 +1086,29 @@
       }
     });
 
+    window.api.view.onSplitChanged((data) => {
+      const ids = Array.isArray(data && data.ids) ? data.ids : [];
+      if (data && data.enabled && ids.length >= 2) {
+        clearPendingSplitRestore();
+        splitSelecting = true;
+        splitSelection.clear();
+        ids.slice(0, 3).forEach((id) => splitSelection.add(id));
+        splitRatios = ids.map(() => 1 / ids.length);
+        ids.forEach((id) => loadedModelIds.add(id));
+        updateSplitControls();
+        renderModels(getVisibleModels());
+        renderSplitResizers();
+        return;
+      }
+
+      splitSelecting = false;
+      splitSelection.clear();
+      splitRatios = [];
+      clearSplitResizers();
+      updateSplitControls();
+      renderModels(getVisibleModels());
+    });
+
     window.api.view.onClosed((data) => {
       syncViewState(data.state, data.id);
       if (statusModal.classList.contains('show')) {

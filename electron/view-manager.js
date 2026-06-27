@@ -11,6 +11,7 @@ const DARK_LOADING_BACKGROUND = '#181818';
 const LIGHT_LOADING_BACKGROUND = '#ffffff';
 const DEBUG = process.argv.includes('--dev');
 const PROMPT_SUBMIT_TIMEOUT_MS = 12000;
+const PROMPT_INTERACTIVE_TIMEOUT_MS = 8000;
 const CONVERSATION_EXTRACT_SCRIPT = `
 (async () => {
   const normalize = (text) => String(text || '')
@@ -173,32 +174,55 @@ function buildPromptSubmitScript(prompt) {
     }));
   }
 
-  await new Promise((resolve) => setTimeout(resolve, 250));
+  await new Promise((resolve) => setTimeout(resolve, 450));
 
   const sendSelectors = [
     '[data-testid="send-button"]',
+    '[data-testid="composer-send-button"]',
+    '[data-testid="composer-submit-button"]',
+    'button[data-testid*="send" i]',
+    'button[data-testid*="submit" i]',
+    '#composer-submit-button',
     '[aria-label*="Send" i]',
+    '[aria-label*="Send prompt" i]',
     '[aria-label*="发送" i]',
     '[aria-label*="submit" i]',
     'button[type="submit"]',
     'button.send-button'
   ];
-  const buttons = sendSelectors
-    .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
-    .filter((button, index, list) => list.indexOf(button) === index)
-    .filter((button) => isVisible(button) && !button.disabled && button.getAttribute('aria-disabled') !== 'true');
-  const sendButton = buttons.find((button) => {
-    const label = normalize([
-      button.textContent,
-      button.getAttribute('aria-label'),
-      button.getAttribute('data-testid'),
-      button.className
-    ].join(' '));
-    return label.includes('send') || label.includes('发送') || label.includes('submit') || label.includes('arrow') || label.includes('提交');
-  }) || buttons[0];
+  const findSendButton = () => {
+    const buttons = sendSelectors
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((button, index, list) => list.indexOf(button) === index)
+      .filter((button) => isVisible(button) && !button.disabled && button.getAttribute('aria-disabled') !== 'true');
+    return buttons.find((button) => {
+      const label = normalize([
+        button.textContent,
+        button.getAttribute('aria-label'),
+        button.getAttribute('data-testid'),
+        button.id,
+        button.className
+      ].join(' '));
+      return label.includes('send') || label.includes('发送') || label.includes('submit') || label.includes('arrow') || label.includes('提交');
+    }) || buttons[0];
+  };
+  const waitForSendButton = async () => {
+    const started = Date.now();
+    while (Date.now() - started < 3000) {
+      const button = findSendButton();
+      if (button) return button;
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+    return findSendButton();
+  };
+  const sendButton = await waitForSendButton();
 
   if (sendButton) {
+    sendButton.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
+    sendButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    sendButton.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
     sendButton.click();
+    await new Promise((resolve) => setTimeout(resolve, 450));
     return { ok: true, method: 'button' };
   }
 
@@ -524,16 +548,50 @@ class ViewManager {
     });
   }
 
+  waitForEntryInteractive(entry, timeoutMs = PROMPT_INTERACTIVE_TIMEOUT_MS) {
+    const webContents = entry ? entry.view.webContents : null;
+    if (!entry || !webContents || webContents.isDestroyed() || entry.hasContent || !webContents.isLoading()) {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const cleanup = () => {
+        webContents.removeListener('dom-ready', done);
+        webContents.removeListener('did-stop-loading', done);
+        webContents.removeListener('did-finish-load', done);
+        webContents.removeListener('did-fail-load', done);
+        clearTimeout(timer);
+      };
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve();
+      };
+      const timer = setTimeout(done, timeoutMs);
+
+      webContents.once('dom-ready', done);
+      webContents.once('did-stop-loading', done);
+      webContents.once('did-finish-load', done);
+      webContents.once('did-fail-load', done);
+    });
+  }
+
   /**
    * 向指定模型页面填入 Prompt 并发送。只操作当前模型网页，不触碰 session 数据。
    */
-  async submitPrompt(modelId, model, prompt) {
+  async submitPrompt(modelId, model, prompt, options = {}) {
     const targetModel = model || (this.views.has(modelId) ? this.views.get(modelId).model : null);
     if (!targetModel || typeof prompt !== 'string' || !prompt.trim()) {
       return { ok: false, reason: 'invalid-prompt' };
     }
 
-    await this.switchTo(modelId, targetModel);
+    if (options.preserveLayout === true) {
+      await this.ensureView(targetModel);
+    } else {
+      await this.switchTo(modelId, targetModel);
+    }
 
     const entry = this.views.get(modelId);
     if (!entry || entry.view.webContents.isDestroyed()) {
@@ -541,9 +599,12 @@ class ViewManager {
     }
 
     const { webContents } = entry.view;
-    await this.waitForWebContentsReady(webContents);
+    await this.waitForEntryInteractive(entry);
 
     try {
+      if (typeof webContents.focus === 'function') {
+        webContents.focus();
+      }
       return await webContents.executeJavaScript(buildPromptSubmitScript(prompt.trim()), false);
     } catch (error) {
       debugError(`[${entry.model.name}] prompt submit failed`, error);
