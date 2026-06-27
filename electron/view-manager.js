@@ -269,6 +269,8 @@ class ViewManager {
     this.splitMode = false;
     this.splitIds = [];
     this.splitRatios = [];
+    this.splitDirection = 'horizontal';
+    this.sidebarCollapsed = false;
     this.restoreEntries = this.createRestoreEntryMap(restoreSnapshot);
   }
 
@@ -311,6 +313,15 @@ class ViewManager {
       this.applyViewBackground(entry.view);
       await this.applyProxyToSession(entry.view.webContents.session, entry.model);
     }
+  }
+
+  getSidebarWidth() {
+    return this.sidebarCollapsed ? 0 : SIDEBAR_WIDTH;
+  }
+
+  setSidebarCollapsed(collapsed) {
+    this.sidebarCollapsed = collapsed === true;
+    this.resizeAll();
   }
 
   getLoadingBackgroundColor() {
@@ -619,7 +630,7 @@ class ViewManager {
   /**
    * 进入分屏模式，同时显示 2-3 个模型。
    */
-  async enterSplit(models) {
+  async enterSplit(models, direction = 'horizontal') {
     if (!Array.isArray(models) || models.length < 2 || models.length > 3) {
       console.error('[ViewManager] split mode requires 2-3 models');
       return false;
@@ -632,6 +643,7 @@ class ViewManager {
     this.splitMode = true;
     this.splitIds = models.map((model) => model.id);
     this.splitRatios = models.map(() => 1 / models.length);
+    this.splitDirection = direction === 'vertical' ? 'vertical' : 'horizontal';
     this.activeId = this.splitIds[0];
 
     for (const model of models) {
@@ -668,11 +680,12 @@ class ViewManager {
     if (!entry) return;
 
     const [width, height] = this.win.getContentSize();
+    const sidebarWidth = this.getSidebarWidth();
     const contentHeight = Math.max(0, height - TOP_BAR_HEIGHT);
     entry.view.setBounds({
-      x: SIDEBAR_WIDTH,
+      x: sidebarWidth,
       y: TOP_BAR_HEIGHT,
-      width: Math.max(0, width - SIDEBAR_WIDTH),
+      width: Math.max(0, width - sidebarWidth),
       height: contentHeight,
     });
   }
@@ -698,12 +711,40 @@ class ViewManager {
     if (!this.splitMode || this.splitIds.length === 0) return;
 
     const [width, height] = this.win.getContentSize();
+    const sidebarWidth = this.getSidebarWidth();
     const contentHeight = Math.max(0, height - TOP_BAR_HEIGHT);
-    const availableWidth = Math.max(0, width - SIDEBAR_WIDTH);
+    const availableWidth = Math.max(0, width - sidebarWidth);
+    if (this.splitDirection === 'vertical') {
+      const gutterTotal = SPLIT_GUTTER_WIDTH * (this.splitIds.length - 1);
+      const contentHeightForRows = Math.max(0, contentHeight - gutterTotal);
+      const ratios = this.getNormalizedSplitRatios();
+      let y = TOP_BAR_HEIGHT;
+
+      this.splitIds.forEach((id, index) => {
+        const entry = this.views.get(id);
+        if (!entry) return;
+
+        const isLast = index === this.splitIds.length - 1;
+        const rowHeight = isLast
+          ? TOP_BAR_HEIGHT + contentHeight - y
+          : Math.floor(contentHeightForRows * ratios[index]);
+
+        entry.view.setBounds({
+          x: sidebarWidth,
+          y,
+          width: availableWidth,
+          height: Math.max(0, rowHeight),
+        });
+
+        y += rowHeight + SPLIT_GUTTER_WIDTH;
+      });
+      return;
+    }
+
     const gutterTotal = SPLIT_GUTTER_WIDTH * (this.splitIds.length - 1);
     const contentWidth = Math.max(0, availableWidth - gutterTotal);
     const ratios = this.getNormalizedSplitRatios();
-    let x = SIDEBAR_WIDTH;
+    let x = sidebarWidth;
 
     this.splitIds.forEach((id, index) => {
       const entry = this.views.get(id);
@@ -711,7 +752,7 @@ class ViewManager {
 
       const isLast = index === this.splitIds.length - 1;
       const columnWidth = isLast
-        ? SIDEBAR_WIDTH + availableWidth - x
+        ? sidebarWidth + availableWidth - x
         : Math.floor(contentWidth * ratios[index]);
 
       entry.view.setBounds({
@@ -868,6 +909,7 @@ class ViewManager {
       splitMode: this.splitMode,
       splitIds: this.splitMode ? this.splitIds.slice() : [],
       splitRatios: this.splitMode ? this.getNormalizedSplitRatios() : [],
+      splitDirection: this.splitMode ? this.splitDirection : 'horizontal',
       entries,
     };
   }
@@ -946,6 +988,7 @@ class ViewManager {
       splitMode: this.splitMode,
       splitIds: this.splitIds.slice(),
       splitRatios: this.splitMode ? this.getNormalizedSplitRatios() : [],
+      splitDirection: this.splitMode ? this.splitDirection : 'horizontal',
       loadedIds: Array.from(this.views.keys()),
     };
   }

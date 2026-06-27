@@ -392,6 +392,7 @@ function normalizeSnapshot(data) {
       splitMode: false,
       splitIds: [],
       splitRatios: [],
+      splitDirection: 'horizontal',
       entries: [],
     };
   }
@@ -403,6 +404,7 @@ function normalizeSnapshot(data) {
     splitMode: raw.splitMode === true,
     splitIds: splitIds.slice(0, 3),
     splitRatios: splitRatios.slice(0, 3),
+    splitDirection: raw.splitDirection === 'vertical' ? 'vertical' : 'horizontal',
     entries: entries
       .filter((entry) => entry && typeof entry.modelId === 'string' && isRestorableUrl(entry.url))
       .map((entry) => ({
@@ -974,9 +976,9 @@ async function submitQuickAction(payload) {
   const results = [];
   const targetIds = targetModels.map((model) => model.id);
   if (targetModels.length >= 2) {
-    const ok = await viewManager.enterSplit(targetModels);
+    const ok = await viewManager.enterSplit(targetModels, 'horizontal');
     if (ok) {
-      mainWindow.webContents.send('view:splitChanged', { enabled: true, ids: targetIds });
+      mainWindow.webContents.send('view:splitChanged', { enabled: true, ids: targetIds, direction: 'horizontal' });
       mainWindow.webContents.send('view:switched', { id: primaryModel.id });
     }
   }
@@ -992,7 +994,7 @@ async function submitQuickAction(payload) {
   }
 
   if (targetModels.length >= 2) {
-    mainWindow.webContents.send('view:splitChanged', { enabled: true, ids: targetIds });
+    mainWindow.webContents.send('view:splitChanged', { enabled: true, ids: targetIds, direction: 'horizontal' });
     mainWindow.webContents.send('view:switched', { id: primaryModel.id });
   }
 
@@ -1269,7 +1271,7 @@ function registerIPC() {
   ipcMain.handle('view:close', (_event, modelId) => {
     const state = viewManager.closeView(modelId);
     mainWindow.webContents.send('view:closed', { id: modelId, state });
-    mainWindow.webContents.send('view:splitChanged', { enabled: state.splitMode, ids: state.splitIds });
+    mainWindow.webContents.send('view:splitChanged', { enabled: state.splitMode, ids: state.splitIds, direction: state.splitDirection });
     mainWindow.webContents.send('view:switched', { id: state.activeId });
     return state;
   });
@@ -1280,16 +1282,17 @@ function registerIPC() {
     state.closedIds.forEach((id) => {
       mainWindow.webContents.send('view:closed', { id, state });
     });
-    mainWindow.webContents.send('view:splitChanged', { enabled: state.splitMode, ids: state.splitIds });
+    mainWindow.webContents.send('view:splitChanged', { enabled: state.splitMode, ids: state.splitIds, direction: state.splitDirection });
     mainWindow.webContents.send('view:switched', { id: state.activeId });
     return state;
   });
 
   // 进入分屏模式
-  ipcMain.handle('view:enterSplit', async (_event, modelIds) => {
+  ipcMain.handle('view:enterSplit', async (_event, modelIds, direction = 'horizontal') => {
     if (!Array.isArray(modelIds) || modelIds.length < 2 || modelIds.length > 3) {
       return false;
     }
+    const splitDirection = direction === 'vertical' ? 'vertical' : 'horizontal';
 
     const models = loadModels();
     const selectedModels = modelIds
@@ -1300,9 +1303,9 @@ function registerIPC() {
       return false;
     }
 
-    const ok = await viewManager.enterSplit(selectedModels);
+    const ok = await viewManager.enterSplit(selectedModels, splitDirection);
     if (ok) {
-      mainWindow.webContents.send('view:splitChanged', { enabled: true, ids: modelIds });
+      mainWindow.webContents.send('view:splitChanged', { enabled: true, ids: modelIds, direction: splitDirection });
       mainWindow.webContents.send('view:switched', { id: selectedModels[0].id });
     }
     return ok;
@@ -1311,7 +1314,7 @@ function registerIPC() {
   // 退出分屏模式
   ipcMain.handle('view:exitSplit', () => {
     viewManager.exitSplit();
-    mainWindow.webContents.send('view:splitChanged', { enabled: false, ids: [] });
+    mainWindow.webContents.send('view:splitChanged', { enabled: false, ids: [], direction: 'horizontal' });
     return true;
   });
 
@@ -1326,6 +1329,13 @@ function registerIPC() {
       viewManager.showActive();
     } else {
       viewManager.hideAll();
+    }
+    return true;
+  });
+
+  ipcMain.handle('view:setSidebarCollapsed', (_event, collapsed) => {
+    if (viewManager) {
+      viewManager.setSidebarCollapsed(collapsed === true);
     }
     return true;
   });

@@ -78,7 +78,7 @@ contextBridge.exposeInMainWorld('api', {
     closeInactive: () => ipcRenderer.invoke('view:closeInactive'),
 
     /** 进入分屏模式 */
-    enterSplit: (ids) => ipcRenderer.invoke('view:enterSplit', ids),
+    enterSplit: (ids, direction) => ipcRenderer.invoke('view:enterSplit', ids, direction),
 
     /** 退出分屏模式 */
     exitSplit: () => ipcRenderer.invoke('view:exitSplit'),
@@ -88,6 +88,9 @@ contextBridge.exposeInMainWorld('api', {
 
     /** 隐藏/显示所有 WebView（弹窗时隐藏，关闭时恢复） */
     setVisible: (visible) => ipcRenderer.invoke('view:setVisible', visible),
+
+    /** 折叠/展开左侧模型栏 */
+    setSidebarCollapsed: (collapsed) => ipcRenderer.invoke('view:setSidebarCollapsed', collapsed),
 
     /** 监听视图切换事件 */
     onSwitched: (callback) => {

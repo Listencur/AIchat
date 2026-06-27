@@ -89,6 +89,13 @@ body::after {
   padding: 0 12px;
 }
 
+body.sidebar-collapsed .window-bar-left {
+  width: 48px;
+  min-width: 48px;
+  justify-content: center;
+  padding: 0 8px;
+}
+
 .window-drag-region {
   flex: 1;
   min-width: 0;
@@ -146,6 +153,10 @@ body::after {
   height: 100%;
 }
 
+body.sidebar-collapsed .sidebar {
+  display: none;
+}
+
 .sidebar-header {
   padding: 14px 14px;
   border-bottom: 1px solid var(--border-color);
@@ -189,6 +200,31 @@ body::after {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--bg-hover);
+}
+
+body.sidebar-collapsed .header-actions .icon-button:not(.sidebar-toggle) {
+  display: none;
+}
+
+.sidebar-toggle span {
+  position: relative;
+  width: 16px;
+  height: 14px;
+  border: 1.5px solid currentColor;
+  border-radius: 4px;
+  display: block;
+}
+
+.sidebar-toggle span::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 5px;
+  width: 1.5px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.78;
 }
 
 /* ── 分组列表 ── */
@@ -576,6 +612,7 @@ body::after {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .split-actions[hidden] {
@@ -599,6 +636,26 @@ body::after {
 
 .btn-text:hover {
   color: var(--accent);
+}
+
+.split-direction {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.split-direction .btn-text {
+  min-width: 30px;
+  padding: 3px 5px;
+  border-radius: 4px;
+}
+
+.split-direction .btn-text.active {
+  color: var(--text-primary);
+  background: var(--bg-active);
 }
 
 /* ── 主区域 ── */
@@ -633,6 +690,15 @@ body::after {
   border-right: 1px solid rgba(0, 0, 0, 0.28);
 }
 
+.split-resizers.vertical .split-resizer {
+  left: 0;
+  right: 0;
+  bottom: auto;
+  width: auto;
+  height: 10px;
+  cursor: row-resize;
+}
+
 .split-resizer::after {
   content: '';
   position: absolute;
@@ -644,6 +710,11 @@ body::after {
   background: var(--text-secondary);
   transform: translate(-50%, -50%);
   opacity: 0.65;
+}
+
+.split-resizers.vertical .split-resizer::after {
+  width: 44px;
+  height: 2px;
 }
 
 .split-resizer:hover,

@@ -15,6 +15,7 @@
   const groupForm = document.getElementById('addGroupForm');
   const groupNameInput = document.getElementById('inputGroupName');
   const groupModelChecks = document.getElementById('groupModelChecks');
+  const sidebarToggleBtn = document.getElementById('btnSidebarToggle');
   const themeBtn = document.getElementById('btnTheme');
   const windowMinimizeBtn = document.getElementById('btnWindowMinimize');
   const windowMaximizeBtn = document.getElementById('btnWindowMaximize');
@@ -33,6 +34,9 @@
   const exportConversationBtn = document.getElementById('btnExportConversation');
   const splitActions = document.getElementById('splitActions');
   const splitHint = document.getElementById('splitHint');
+  const splitDirectionControl = document.getElementById('splitDirection');
+  const splitHorizontalBtn = document.getElementById('btnSplitHorizontal');
+  const splitVerticalBtn = document.getElementById('btnSplitVertical');
   const splitRestoreBtn = document.getElementById('btnRestoreSplit');
   const splitExitBtn = document.getElementById('btnExitSplit');
   const mainArea = document.getElementById('mainArea');
@@ -47,7 +51,9 @@
   let loadedModelIds = new Set();
   let loadingModelIds = new Set();
   let failedModelIds = new Set();
+  let sidebarCollapsed = false;
   let splitSelecting = false;
+  let splitDirection = 'horizontal';
   let splitRatios = [];
   let pendingSplitRestore = null;
   let splitRestoring = false;
@@ -179,6 +185,41 @@
     themeBtn.textContent = nextTheme === 'light' ? '☀' : '☾';
     themeBtn.title = nextTheme === 'light' ? '切换深色模式' : '切换浅色模式';
     themeBtn.setAttribute('aria-label', themeBtn.title);
+  }
+
+  async function setSidebarCollapsed(collapsed, persist = true) {
+    sidebarCollapsed = collapsed === true;
+    document.body.classList.toggle('sidebar-collapsed', sidebarCollapsed);
+    sidebarToggleBtn.title = sidebarCollapsed ? '显示模型栏' : '隐藏模型栏';
+    sidebarToggleBtn.setAttribute('aria-label', sidebarToggleBtn.title);
+    sidebarToggleBtn.classList.toggle('active', sidebarCollapsed);
+    closeModelMenu();
+
+    if (persist) {
+      localStorage.setItem('sidebarCollapsed', sidebarCollapsed ? '1' : '0');
+    }
+
+    await window.api.view.setSidebarCollapsed(sidebarCollapsed);
+    renderSplitResizers();
+  }
+
+  function toggleSidebarCollapsed() {
+    setSidebarCollapsed(!sidebarCollapsed);
+  }
+
+  function setSplitDirection(direction, syncView = true) {
+    splitDirection = direction === 'vertical' ? 'vertical' : 'horizontal';
+    splitHorizontalBtn.classList.toggle('active', splitDirection === 'horizontal');
+    splitVerticalBtn.classList.toggle('active', splitDirection === 'vertical');
+    splitResizers.classList.toggle('vertical', splitDirection === 'vertical');
+    splitResizers.classList.toggle('horizontal', splitDirection === 'horizontal');
+
+    if (syncView && splitSelecting && splitSelection.size >= 2) {
+      syncSplitView();
+      return;
+    }
+
+    renderSplitResizers();
   }
 
   async function toggleTheme() {
@@ -549,6 +590,7 @@
       splitSelecting = true;
       splitSelection.clear();
       state.splitIds.forEach((id) => splitSelection.add(id));
+      setSplitDirection(state.splitDirection, false);
       splitRatios = normalizeRatios(state.splitRatios, state.splitIds.length);
       updateActive(state.activeId || state.splitIds[0]);
       updateSplitControls();
@@ -708,7 +750,7 @@
 
     if (ids.length >= 2) {
       splitRatios = ids.map(() => 1 / ids.length);
-      const ok = await window.api.view.enterSplit(ids);
+      const ok = await window.api.view.enterSplit(ids, splitDirection);
       if (ok) {
         ids.forEach((id) => loadedModelIds.add(id));
         updateActive(ids[0]);
@@ -747,6 +789,7 @@
     splitActions.hidden = !splitSelecting && !hasPendingRestore && !splitRestoring;
     splitRestoreBtn.hidden = !hasPendingRestore || splitSelecting || splitRestoring;
     splitExitBtn.hidden = !splitSelecting || splitRestoring;
+    splitDirectionControl.hidden = !splitSelecting || splitRestoring;
 
     if (splitRestoring) {
       splitHint.textContent = '正在恢复分屏';
@@ -792,11 +835,12 @@
     splitSelecting = true;
     splitSelection.clear();
     ids.forEach((id) => splitSelection.add(id));
+    setSplitDirection(pendingSplitRestore.direction, false);
     splitRatios = normalizeRatios(pendingSplitRestore.ratios, ids.length);
     updateSplitControls();
     renderModels(getVisibleModels());
 
-    const ok = await window.api.view.enterSplit(ids);
+    const ok = await window.api.view.enterSplit(ids, splitDirection);
     if (ok) {
       await window.api.view.setSplitRatios(splitRatios);
       ids.forEach((id) => loadedModelIds.add(id));
@@ -832,9 +876,8 @@
     }
 
     splitResizers.hidden = false;
-
-    const contentWidth = Math.max(0, mainArea.clientWidth - SPLIT_GUTTER_WIDTH * (count - 1));
-    let left = 0;
+    splitResizers.classList.toggle('vertical', splitDirection === 'vertical');
+    splitResizers.classList.toggle('horizontal', splitDirection === 'horizontal');
 
     for (let i = 0; i < count - 1; i += 1) {
       const handle = document.createElement('div');
@@ -842,8 +885,6 @@
       handle.dataset.index = String(i);
       handle.addEventListener('pointerdown', (event) => startResize(event, i));
       splitResizers.appendChild(handle);
-
-      left += contentWidth * splitRatios[i];
     }
 
     updateSplitResizerPositions();
@@ -862,9 +903,24 @@
     let left = 0;
 
     splitResizers.querySelectorAll('.split-resizer').forEach((handle, index) => {
+      if (splitDirection === 'vertical') {
+        return;
+      }
+
       left += contentWidth * splitRatios[index];
       handle.style.left = `${Math.round(left + SPLIT_GUTTER_WIDTH * index)}px`;
+      handle.style.top = '';
     });
+
+    if (splitDirection === 'vertical') {
+      const contentHeight = Math.max(0, mainArea.clientHeight - SPLIT_GUTTER_WIDTH * (count - 1));
+      let top = 0;
+      splitResizers.querySelectorAll('.split-resizer').forEach((handle, index) => {
+        top += contentHeight * splitRatios[index];
+        handle.style.top = `${Math.round(top + SPLIT_GUTTER_WIDTH * index)}px`;
+        handle.style.left = '';
+      });
+    }
   }
 
   function startResize(event, index) {
@@ -876,15 +932,19 @@
     const pairTotal = startRatios[index] + startRatios[index + 1];
     const beforeTotal = startRatios.slice(0, index).reduce((sum, ratio) => sum + ratio, 0);
     const rect = mainArea.getBoundingClientRect();
-    const contentWidth = Math.max(1, rect.width - SPLIT_GUTTER_WIDTH * (count - 1));
+    const contentSize = splitDirection === 'vertical'
+      ? Math.max(1, rect.height - SPLIT_GUTTER_WIDTH * (count - 1))
+      : Math.max(1, rect.width - SPLIT_GUTTER_WIDTH * (count - 1));
 
     handle.classList.add('dragging');
     handle.setPointerCapture(event.pointerId);
 
     async function handleMove(moveEvent) {
-      const x = moveEvent.clientX - rect.left;
-      const contentX = x - SPLIT_GUTTER_WIDTH * index;
-      const boundaryRatio = contentX / contentWidth;
+      const pointerPosition = splitDirection === 'vertical'
+        ? moveEvent.clientY - rect.top
+        : moveEvent.clientX - rect.left;
+      const contentPosition = pointerPosition - SPLIT_GUTTER_WIDTH * index;
+      const boundaryRatio = contentPosition / contentSize;
       const nextLeft = clamp(boundaryRatio - beforeTotal, MIN_SPLIT_RATIO, pairTotal - MIN_SPLIT_RATIO);
 
       splitRatios = startRatios.slice();
@@ -946,6 +1006,7 @@
       pendingSplitRestore = {
         ids: splitIds,
         ratios: normalizeRatios(snapshot.splitRatios, splitIds.length),
+        direction: snapshot.splitDirection === 'vertical' ? 'vertical' : 'horizontal',
       };
       updateSplitControls();
       renderModels(getVisibleModels());
@@ -1093,6 +1154,7 @@
         splitSelecting = true;
         splitSelection.clear();
         ids.slice(0, 3).forEach((id) => splitSelection.add(id));
+        setSplitDirection(data.direction, false);
         splitRatios = ids.map(() => 1 / ids.length);
         ids.forEach((id) => loadedModelIds.add(id));
         updateSplitControls();
@@ -1122,6 +1184,8 @@
     // 加载模型列表
     const settings = await window.api.settings.get();
     applyTheme(settings.theme);
+    await setSidebarCollapsed(localStorage.getItem('sidebarCollapsed') === '1', false);
+    setSplitDirection('horizontal', false);
 
     const data = await window.api.models.list();
     const models = data.models || data;
@@ -1198,7 +1262,10 @@
 
     splitExitBtn.addEventListener('click', exitSplitMode);
     splitRestoreBtn.addEventListener('click', restorePendingSplit);
+    splitHorizontalBtn.addEventListener('click', () => setSplitDirection('horizontal'));
+    splitVerticalBtn.addEventListener('click', () => setSplitDirection('vertical'));
     exportConversationBtn.addEventListener('click', exportConversation);
+    sidebarToggleBtn.addEventListener('click', toggleSidebarCollapsed);
     themeBtn.addEventListener('click', toggleTheme);
     windowMinimizeBtn.addEventListener('click', () => window.api.windowControls.minimize());
     windowMaximizeBtn.addEventListener('click', () => window.api.windowControls.toggleMaximize());

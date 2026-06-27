@@ -10,6 +10,9 @@
   <header class="window-bar" id="windowBar">
     <div class="window-bar-left">
       <div class="header-actions">
+        <button class="icon-button sidebar-toggle" id="btnSidebarToggle" title="隐藏模型栏" aria-label="隐藏模型栏">
+          <span></span>
+        </button>
         <button class="icon-button" id="btnTheme" title="切换浅色模式" aria-label="切换浅色模式">☾</button>
         <button class="icon-button" id="btnStatus" title="模型状态" aria-label="模型状态">◉</button>
         <button class="icon-button" id="btnSettings" title="设置" aria-label="设置">⚙</button>
@@ -56,6 +59,10 @@
           </button>
           <div class="split-actions" id="splitActions" hidden>
             <span class="split-hint" id="splitHint">选择 2-3 个模型</span>
+            <div class="split-direction" id="splitDirection">
+              <button class="btn-text active" id="btnSplitHorizontal" type="button">左右</button>
+              <button class="btn-text" id="btnSplitVertical" type="button">上下</button>
+            </div>
             <button class="btn-text" id="btnRestoreSplit" type="button" hidden>恢复分屏</button>
             <button class="btn-text" id="btnExitSplit" type="button">退出</button>
           </div>
