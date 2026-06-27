@@ -102,6 +102,22 @@ contextBridge.exposeInMainWorld('api', {
     set: (settings) => ipcRenderer.invoke('settings:set', settings),
   },
 
+  // ── 迷你窗口 ──
+  quick: {
+    /** 提交快速输入 */
+    submit: (payload) => ipcRenderer.invoke('quick:submit', payload),
+
+    /** 隐藏迷你窗口 */
+    hide: () => ipcRenderer.invoke('quick:hide'),
+
+    /** 迷你窗口显示时触发 */
+    onShow: (callback) => {
+      const handler = () => callback();
+      ipcRenderer.on('quick:show', handler);
+      return () => ipcRenderer.removeListener('quick:show', handler);
+    },
+  },
+
   // ── 会话快照 ──
   snapshot: {
     /** 获取上次保存的会话快照 */

@@ -14,6 +14,8 @@
   const proxyUrlRow = document.getElementById('proxyUrlRow');
   const proxyUrlInput = document.getElementById('inputProxyUrl');
   const restoreSnapshotInput = document.getElementById('inputRestoreSnapshot');
+  const shortcutEnabledInput = document.getElementById('inputShortcutEnabled');
+  const shortcutAcceleratorInput = document.getElementById('inputShortcutAccelerator');
 
   function getSelectedProxyMode() {
     const selected = form.querySelector('input[name="proxyMode"]:checked');
@@ -34,7 +36,42 @@
     (modeInput || fallbackInput).checked = true;
     proxyUrlInput.value = settings.proxyUrl || 'http://127.0.0.1:7897';
     restoreSnapshotInput.checked = settings.restoreSnapshot === true;
+    shortcutEnabledInput.checked = settings.shortcutEnabled !== false;
+    shortcutAcceleratorInput.value = settings.shortcutAccelerator || 'Ctrl+Shift+Space';
     updateProxyUrlState();
+  }
+
+  function normalizeKeyName(key) {
+    if (key === ' ') return 'Space';
+    if (key === 'Escape') return 'Esc';
+    if (key === 'ArrowUp') return 'Up';
+    if (key === 'ArrowDown') return 'Down';
+    if (key === 'ArrowLeft') return 'Left';
+    if (key === 'ArrowRight') return 'Right';
+    if (key.length === 1) return key.toUpperCase();
+    return key;
+  }
+
+  function captureShortcut(event) {
+    event.preventDefault();
+
+    const key = normalizeKeyName(event.key);
+    if (['Control', 'Shift', 'Alt', 'Meta'].includes(key)) {
+      return;
+    }
+
+    const parts = [];
+    if (event.ctrlKey) parts.push('Ctrl');
+    if (event.shiftKey) parts.push('Shift');
+    if (event.altKey) parts.push('Alt');
+    if (event.metaKey) parts.push('Meta');
+
+    if (parts.length === 0) {
+      return;
+    }
+
+    parts.push(key);
+    shortcutAcceleratorInput.value = parts.join('+');
   }
 
   async function openModal() {
@@ -59,10 +96,18 @@
       return;
     }
 
+    const shortcutAccelerator = shortcutAcceleratorInput.value.trim();
+    if (shortcutEnabledInput.checked && !/^(Ctrl|Shift|Alt|Meta)(\+(Ctrl|Shift|Alt|Meta))*\+[^+]+$/.test(shortcutAccelerator)) {
+      shortcutAcceleratorInput.focus();
+      return;
+    }
+
     await window.api.settings.set({
       proxyMode,
       proxyUrl,
       restoreSnapshot: restoreSnapshotInput.checked,
+      shortcutEnabled: shortcutEnabledInput.checked,
+      shortcutAccelerator,
     });
     closeModal();
   }
@@ -75,6 +120,7 @@
   form.querySelectorAll('input[name="proxyMode"]').forEach((input) => {
     input.addEventListener('change', updateProxyUrlState);
   });
+  shortcutAcceleratorInput.addEventListener('keydown', captureShortcut);
 
   modal.addEventListener('click', (e) => {
     if (e.target === modal) closeModal();

@@ -127,6 +127,20 @@
             </span>
           </label>
         </fieldset>
+        <fieldset class="settings-group">
+          <legend>快捷键</legend>
+          <label class="toggle-row">
+            <input type="checkbox" id="inputShortcutEnabled" name="shortcutEnabled" />
+            <span>
+              <strong>启用全局快捷键</strong>
+              <small>在任意位置唤起快速输入窗口</small>
+            </span>
+          </label>
+          <label class="form-row">
+            <span class="form-label">组合键</span>
+            <input type="text" id="inputShortcutAccelerator" name="shortcutAccelerator" placeholder="Ctrl+Shift+Space" />
+          </label>
+        </fieldset>
         <div class="modal-footer">
           <button type="button" class="btn-cancel" id="btnCancelSettings">取消</button>
           <button type="submit" class="btn-confirm">保存</button>

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>快速提问</title>
+  <link rel="stylesheet" href="css/quick.css" />
+</head>
+<body>
+  <main class="quick-shell">
+    <header class="quick-header">
+      <h1>快速提问</h1>
+      <button class="quick-close" id="btnQuickClose" type="button" aria-label="关闭">&times;</button>
+    </header>
+    <form class="quick-form" id="quickForm">
+      <label class="quick-row">
+        <span>模型</span>
+        <select id="quickModelSelect"></select>
+      </label>
+      <label class="quick-row">
+        <span>内容</span>
+        <textarea id="quickPrompt" rows="3" placeholder="输入内容后回车，文本会复制到剪贴板"></textarea>
+      </label>
+      <footer class="quick-actions">
+        <span class="quick-note" id="quickNote">Enter 打开，Shift+Enter 换行</span>
+        <button type="submit">打开</button>
+      </footer>
+    </form>
+  </main>
+  <script src="js/quick.js"></script>
+</body>
+</html>

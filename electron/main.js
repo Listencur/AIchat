@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, session } = require('electron');
+const { app, BrowserWindow, clipboard, globalShortcut, ipcMain, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { ViewManager, SIDEBAR_WIDTH } = require('./view-manager');
@@ -9,6 +9,9 @@ const { ViewManager, SIDEBAR_WIDTH } = require('./view-manager');
 let mainWindow = null;
 /** @type {ViewManager} */
 let viewManager = null;
+/** @type {BrowserWindow} */
+let quickWindow = null;
+let registeredShortcut = null;
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 const diskCachePath = path.join(app.getPath('temp'), 'ai-chat-hub-cache');
@@ -32,9 +35,34 @@ const DEFAULT_SETTINGS = {
   proxyMode: 'system',
   proxyUrl: 'http://127.0.0.1:7897',
   restoreSnapshot: false,
+  shortcutEnabled: true,
+  shortcutAccelerator: 'Ctrl+Shift+Space',
 };
 const PROXY_URL_PATTERN = /^(https?|socks5?):\/\/.+/;
 const SNAPSHOT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 30;
+const MODIFIER_LABELS = new Map([
+  ['CTRL', 'Ctrl'],
+  ['CONTROL', 'Ctrl'],
+  ['CMDORCTRL', 'Ctrl'],
+  ['COMMANDORCONTROL', 'Ctrl'],
+  ['SHIFT', 'Shift'],
+  ['ALT', 'Alt'],
+  ['OPTION', 'Alt'],
+  ['META', 'Meta'],
+  ['SUPER', 'Meta'],
+  ['WIN', 'Meta'],
+]);
+const KEY_LABELS = new Map([
+  [' ', 'Space'],
+  ['SPACEBAR', 'Space'],
+  ['ESC', 'Esc'],
+  ['ESCAPE', 'Esc'],
+  ['RETURN', 'Enter'],
+  ['ARROWUP', 'Up'],
+  ['ARROWDOWN', 'Down'],
+  ['ARROWLEFT', 'Left'],
+  ['ARROWRIGHT', 'Right'],
+]);
 
 function readJsonFile(filePath, fallback) {
   try {
@@ -55,8 +83,60 @@ function normalizeSettings(settings) {
     : DEFAULT_SETTINGS.proxyUrl;
 
   const restoreSnapshot = rawSettings.restoreSnapshot === true;
+  const shortcutEnabled = rawSettings.shortcutEnabled !== false;
+  const shortcutAccelerator = normalizeShortcut(rawSettings.shortcutAccelerator) || DEFAULT_SETTINGS.shortcutAccelerator;
 
-  return { proxyMode, proxyUrl, restoreSnapshot };
+  return { proxyMode, proxyUrl, restoreSnapshot, shortcutEnabled, shortcutAccelerator };
+}
+
+function normalizeShortcut(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const parts = value
+    .split('+')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const modifiers = [];
+  let key = '';
+
+  for (const part of parts) {
+    const upper = part.toUpperCase();
+    const modifier = MODIFIER_LABELS.get(upper);
+    if (modifier) {
+      if (!modifiers.includes(modifier)) {
+        modifiers.push(modifier);
+      }
+      continue;
+    }
+
+    if (key) {
+      return null;
+    }
+
+    if (/^F([1-9]|1[0-9]|2[0-4])$/i.test(part)) {
+      key = part.toUpperCase();
+    } else if (/^[A-Z0-9]$/i.test(part)) {
+      key = part.toUpperCase();
+    } else {
+      key = KEY_LABELS.get(upper) || part;
+    }
+  }
+
+  if (modifiers.length === 0 || !key || modifiers.includes(key)) {
+    return null;
+  }
+
+  return [...modifiers, key].join('+');
+}
+
+function toElectronAccelerator(shortcut) {
+  const normalized = normalizeShortcut(shortcut) || DEFAULT_SETTINGS.shortcutAccelerator;
+  return normalized
+    .split('+')
+    .map((part) => (part === 'Ctrl' ? 'CommandOrControl' : part))
+    .join('+');
 }
 
 function loadSettings() {
@@ -371,9 +451,117 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     if (viewManager) viewManager.destroyAll();
+    if (quickWindow && !quickWindow.isDestroyed()) {
+      quickWindow.close();
+    }
     mainWindow = null;
     viewManager = null;
   });
+}
+
+function createQuickWindow() {
+  quickWindow = new BrowserWindow({
+    width: 520,
+    height: 220,
+    minWidth: 420,
+    minHeight: 180,
+    show: false,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    title: '快速提问',
+    backgroundColor: '#1e1e2e',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  quickWindow.loadFile(path.join(__dirname, '..', 'src', 'quick.html'));
+
+  quickWindow.on('blur', () => {
+    if (quickWindow && !quickWindow.webContents.isDevToolsOpened()) {
+      quickWindow.hide();
+    }
+  });
+
+  quickWindow.on('closed', () => {
+    quickWindow = null;
+  });
+}
+
+function showMainWindow() {
+  if (!mainWindow) {
+    createWindow();
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function showQuickWindow() {
+  if (!quickWindow) {
+    createQuickWindow();
+  }
+
+  quickWindow.center();
+  quickWindow.show();
+  quickWindow.focus();
+  quickWindow.webContents.send('quick:show');
+}
+
+function registerGlobalShortcut(settings) {
+  if (registeredShortcut) {
+    globalShortcut.unregister(registeredShortcut);
+    registeredShortcut = null;
+  }
+
+  const normalized = normalizeSettings(settings);
+  if (!normalized.shortcutEnabled) {
+    return { registered: false, accelerator: normalized.shortcutAccelerator, reason: 'disabled' };
+  }
+
+  const accelerator = toElectronAccelerator(normalized.shortcutAccelerator);
+  const ok = globalShortcut.register(accelerator, showQuickWindow);
+  if (!ok) {
+    console.error(`[main] Failed to register shortcut: ${normalized.shortcutAccelerator}`);
+    return { registered: false, accelerator: normalized.shortcutAccelerator, reason: 'register-failed' };
+  }
+
+  registeredShortcut = accelerator;
+  return { registered: true, accelerator: normalized.shortcutAccelerator };
+}
+
+async function submitQuickAction(payload) {
+  const rawPayload = payload && typeof payload === 'object' ? payload : {};
+  const modelId = typeof rawPayload.modelId === 'string' ? rawPayload.modelId : '';
+  const prompt = typeof rawPayload.prompt === 'string' ? rawPayload.prompt.trim() : '';
+  const models = loadModels();
+  const model = models.find((item) => item.id === modelId) || models[0];
+
+  if (prompt) {
+    clipboard.writeText(prompt);
+  }
+
+  if (quickWindow) {
+    quickWindow.hide();
+  }
+
+  showMainWindow();
+
+  if (!model || !viewManager) {
+    return false;
+  }
+
+  await viewManager.switchTo(model.id, model);
+  mainWindow.webContents.send('view:switched', { id: model.id });
+  return true;
 }
 
 // ── IPC 处理器 ──
@@ -591,12 +779,27 @@ function registerIPC() {
   ipcMain.handle('settings:set', async (_event, settings) => {
     const savedSettings = saveSettings(settings);
     await applyProxySettings(savedSettings);
-    return savedSettings;
+    const shortcutStatus = registerGlobalShortcut(savedSettings);
+    if (quickWindow) {
+      quickWindow.webContents.send('settings:updated', savedSettings);
+    }
+    return { ...savedSettings, shortcutStatus };
   });
 
   // 会话快照读取
   ipcMain.handle('snapshot:get', () => {
     return loadSnapshot();
+  });
+
+  ipcMain.handle('quick:submit', async (_event, payload) => {
+    return submitQuickAction(payload);
+  });
+
+  ipcMain.handle('quick:hide', () => {
+    if (quickWindow) {
+      quickWindow.hide();
+    }
+    return true;
   });
 }
 
@@ -615,10 +818,12 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
-    await applyProxySettings(loadSettings());
+    const settings = loadSettings();
+    await applyProxySettings(settings);
 
     createWindow();
     registerIPC();
+    registerGlobalShortcut(settings);
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -631,5 +836,9 @@ if (!gotSingleInstanceLock) {
     if (process.platform !== 'darwin') {
       app.quit();
     }
+  });
+
+  app.on('will-quit', () => {
+    globalShortcut.unregisterAll();
   });
 }
