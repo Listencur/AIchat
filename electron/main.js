@@ -10,6 +10,7 @@ const {
   globalShortcut,
   ipcMain,
   nativeImage,
+  nativeTheme,
   session,
 } = require('electron');
 const path = require('path');
@@ -200,6 +201,12 @@ function loadSettings() {
 function saveSettings(settings) {
   const normalized = normalizeSettings(settings);
   fs.writeFileSync(userSettingsPath, JSON.stringify(normalized, null, 2), 'utf-8');
+  return normalized;
+}
+
+function applyWebsiteTheme(settings) {
+  const normalized = normalizeSettings(settings);
+  nativeTheme.themeSource = normalized.theme === 'light' ? 'light' : 'dark';
   return normalized;
 }
 
@@ -677,7 +684,7 @@ function getProcessMemoryByPid() {
 // ── 窗口创建 ──
 
 function createWindow() {
-  const settings = loadSettings();
+  const settings = applyWebsiteTheme(loadSettings());
 
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -1347,7 +1354,7 @@ function registerIPC() {
 
   // 设置保存
   ipcMain.handle('settings:set', async (_event, settings) => {
-    const savedSettings = saveSettings(settings);
+    const savedSettings = applyWebsiteTheme(saveSettings(settings));
     await applyProxySettings(savedSettings);
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setBackgroundColor(savedSettings.theme === 'light' ? '#eeeeee' : '#202020');
@@ -1440,7 +1447,7 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
-    const settings = loadSettings();
+    const settings = applyWebsiteTheme(loadSettings());
     await applyProxySettings(settings);
 
     Menu.setApplicationMenu(null);
