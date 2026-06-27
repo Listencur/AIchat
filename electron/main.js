@@ -56,6 +56,8 @@ const DEFAULT_SETTINGS = {
   restoreSnapshot: false,
   shortcutEnabled: true,
   shortcutAccelerator: 'Ctrl+Shift+Space',
+  theme: 'dark',
+  closeAction: 'ask',
 };
 const DEFAULT_QUICK_STATE = {
   draft: '',
@@ -117,8 +119,12 @@ function normalizeSettings(settings) {
   const restoreSnapshot = rawSettings.restoreSnapshot === true;
   const shortcutEnabled = rawSettings.shortcutEnabled !== false;
   const shortcutAccelerator = normalizeShortcut(rawSettings.shortcutAccelerator) || DEFAULT_SETTINGS.shortcutAccelerator;
+  const theme = rawSettings.theme === 'light' ? 'light' : 'dark';
+  const closeAction = ['ask', 'minimize', 'quit'].includes(rawSettings.closeAction)
+    ? rawSettings.closeAction
+    : DEFAULT_SETTINGS.closeAction;
 
-  return { proxyMode, proxyUrl, restoreSnapshot, shortcutEnabled, shortcutAccelerator };
+  return { proxyMode, proxyUrl, restoreSnapshot, shortcutEnabled, shortcutAccelerator, theme, closeAction };
 }
 
 function normalizeShortcut(value) {
@@ -658,15 +664,23 @@ function getProcessMemoryByPid() {
 // ── 窗口创建 ──
 
 function createWindow() {
+  const settings = loadSettings();
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
     minHeight: 600,
     icon: getAppIcon(),
-    backgroundColor: '#1e1e2e',
-    title: 'AI对话聚合',
+    backgroundColor: settings.theme === 'light' ? '#eeeeee' : '#202020',
+    title: '',
     autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: settings.theme === 'light' ? '#eeeeee' : '#202020',
+      symbolColor: settings.theme === 'light' ? '#1f1f1f' : '#f4f4f4',
+      height: 30,
+    },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -679,7 +693,6 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, '..', 'src', 'index.html'));
 
   // 初始化 ViewManager
-  const settings = loadSettings();
   viewManager = new ViewManager(mainWindow, settings, settings.restoreSnapshot ? loadSnapshot() : null);
 
   // 窗口 resize 时重新计算所有 View 的 bounds
@@ -696,6 +709,18 @@ function createWindow() {
     if (appIsQuitting) return;
 
     event.preventDefault();
+
+    const settings = loadSettings();
+    if (settings.closeAction === 'minimize') {
+      minimizeToTray();
+      return;
+    }
+
+    if (settings.closeAction === 'quit') {
+      await quitApplication();
+      return;
+    }
+
     if (closeChoiceInProgress) {
       return;
     }
@@ -704,21 +729,29 @@ function createWindow() {
     const result = await dialog.showMessageBox(mainWindow, {
       type: 'question',
       title: '关闭 AI 对话聚合',
-      message: '要退出程序，还是最小化到系统托盘？',
-      detail: '最小化到托盘后，程序仍在后台运行，全局快捷键仍可唤起快速输入窗口。',
+      message: '关闭窗口时你想怎么处理？',
+      detail: '最小化到托盘会保留后台运行和快捷键；退出程序会关闭所有窗口并释放进程。',
       buttons: ['最小化到托盘', '退出程序', '取消'],
       defaultId: 0,
       cancelId: 2,
+      checkboxLabel: '记住我的选择，可在设置中修改',
+      checkboxChecked: false,
       noLink: true,
     });
     closeChoiceInProgress = false;
 
     if (result.response === 0) {
+      if (result.checkboxChecked) {
+        saveSettings({ ...settings, closeAction: 'minimize' });
+      }
       minimizeToTray();
       return;
     }
 
     if (result.response === 1) {
+      if (result.checkboxChecked) {
+        saveSettings({ ...settings, closeAction: 'quit' });
+      }
       await quitApplication();
     }
   });
@@ -1246,6 +1279,16 @@ function registerIPC() {
   ipcMain.handle('settings:set', async (_event, settings) => {
     const savedSettings = saveSettings(settings);
     await applyProxySettings(savedSettings);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setBackgroundColor(savedSettings.theme === 'light' ? '#eeeeee' : '#202020');
+      if (typeof mainWindow.setTitleBarOverlay === 'function') {
+        mainWindow.setTitleBarOverlay({
+          color: savedSettings.theme === 'light' ? '#eeeeee' : '#202020',
+          symbolColor: savedSettings.theme === 'light' ? '#1f1f1f' : '#f4f4f4',
+          height: 30,
+        });
+      }
+    }
     const shortcutStatus = registerGlobalShortcut(savedSettings);
     if (quickWindow) {
       quickWindow.webContents.send('settings:updated', savedSettings);

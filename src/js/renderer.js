@@ -14,6 +14,7 @@
   const groupForm = document.getElementById('addGroupForm');
   const groupNameInput = document.getElementById('inputGroupName');
   const groupModelChecks = document.getElementById('groupModelChecks');
+  const themeBtn = document.getElementById('btnTheme');
   const statusBtn = document.getElementById('btnStatus');
   const statusModal = document.getElementById('modalStatus');
   const statusCloseBtn = document.getElementById('btnCloseStatus');
@@ -83,24 +84,10 @@
       name.textContent = model.name;
       li.appendChild(name);
 
-      const closeBtn = document.createElement('button');
-      closeBtn.className = 'model-close';
-      closeBtn.type = 'button';
-      closeBtn.title = '结束并释放内存';
-      closeBtn.setAttribute('aria-label', `结束 ${model.name}`);
-      closeBtn.textContent = '×';
-      closeBtn.disabled = !loadedModelIds.has(model.id);
-      li.appendChild(closeBtn);
-
       const check = document.createElement('span');
       check.className = 'model-check';
       check.textContent = '✓';
       li.appendChild(check);
-
-      closeBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        closeModel(model.id);
-      });
 
       li.addEventListener('contextmenu', (event) => {
         event.preventDefault();
@@ -147,6 +134,24 @@
     wrapper.textContent = model.icon || '🤖';
     wrapper.classList.add('icon-fallback');
     return wrapper;
+  }
+
+  function applyTheme(theme) {
+    const nextTheme = theme === 'light' ? 'light' : 'dark';
+    document.body.dataset.theme = nextTheme;
+    themeBtn.textContent = nextTheme === 'light' ? '☀' : '☾';
+    themeBtn.title = nextTheme === 'light' ? '切换深色模式' : '切换浅色模式';
+    themeBtn.setAttribute('aria-label', themeBtn.title);
+  }
+
+  async function toggleTheme() {
+    const settings = await window.api.settings.get();
+    const nextTheme = settings.theme === 'light' ? 'dark' : 'light';
+    const saved = await window.api.settings.set({
+      ...settings,
+      theme: nextTheme,
+    });
+    applyTheme(saved.theme);
   }
 
   /**
@@ -909,6 +914,9 @@
   // ── 初始化 ──
   document.addEventListener('DOMContentLoaded', async () => {
     // 加载模型列表
+    const settings = await window.api.settings.get();
+    applyTheme(settings.theme);
+
     const data = await window.api.models.list();
     const models = data.models || data;
     modelsCache = models;
@@ -991,6 +999,7 @@
 
     splitExitBtn.addEventListener('click', exitSplitMode);
     exportConversationBtn.addEventListener('click', exportConversation);
+    themeBtn.addEventListener('click', toggleTheme);
     statusBtn.addEventListener('click', openStatusModal);
     statusCloseBtn.addEventListener('click', closeStatusModal);
     statusRefreshBtn.addEventListener('click', refreshStatusPanel);

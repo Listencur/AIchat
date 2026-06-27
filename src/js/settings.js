@@ -16,6 +16,7 @@
   const restoreSnapshotInput = document.getElementById('inputRestoreSnapshot');
   const shortcutEnabledInput = document.getElementById('inputShortcutEnabled');
   const shortcutAcceleratorInput = document.getElementById('inputShortcutAccelerator');
+  let currentSettings = null;
 
   function getSelectedProxyMode() {
     const selected = form.querySelector('input[name="proxyMode"]:checked');
@@ -30,10 +31,14 @@
 
   async function loadSettingsIntoForm() {
     const settings = await window.api.settings.get();
+    currentSettings = settings;
     const modeInput = form.querySelector(`input[name="proxyMode"][value="${settings.proxyMode}"]`);
     const fallbackInput = form.querySelector('input[name="proxyMode"][value="system"]');
+    const closeActionInput = form.querySelector(`input[name="closeAction"][value="${settings.closeAction || 'ask'}"]`);
+    const closeActionFallback = form.querySelector('input[name="closeAction"][value="ask"]');
 
     (modeInput || fallbackInput).checked = true;
+    (closeActionInput || closeActionFallback).checked = true;
     proxyUrlInput.value = settings.proxyUrl || 'http://127.0.0.1:7897';
     restoreSnapshotInput.checked = settings.restoreSnapshot === true;
     shortcutEnabledInput.checked = settings.shortcutEnabled !== false;
@@ -103,11 +108,13 @@
     }
 
     await window.api.settings.set({
+      ...(currentSettings || {}),
       proxyMode,
       proxyUrl,
       restoreSnapshot: restoreSnapshotInput.checked,
       shortcutEnabled: shortcutEnabledInput.checked,
       shortcutAccelerator,
+      closeAction: form.querySelector('input[name="closeAction"]:checked')?.value || 'ask',
     });
     closeModal();
   }

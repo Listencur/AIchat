@@ -11,8 +11,8 @@
     <!-- ── 侧边栏 ── -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
-        <span class="sidebar-title">AI 对话聚合</span>
         <div class="header-actions">
+          <button class="icon-button" id="btnTheme" title="切换浅色模式" aria-label="切换浅色模式">☾</button>
           <button class="icon-button" id="btnStatus" title="模型状态" aria-label="模型状态">◉</button>
           <button class="icon-button" id="btnSettings" title="设置" aria-label="设置">⚙</button>
         </div>
@@ -157,6 +157,30 @@
             <span>
               <strong>启动时恢复上次会话</strong>
               <small>恢复上次打开的模型、分屏布局和页面位置</small>
+            </span>
+          </label>
+        </fieldset>
+        <fieldset class="settings-group">
+          <legend>关闭窗口</legend>
+          <label class="radio-row">
+            <input type="radio" name="closeAction" value="ask" />
+            <span>
+              <strong>每次询问</strong>
+              <small>关闭窗口时询问最小化到托盘或退出程序</small>
+            </span>
+          </label>
+          <label class="radio-row">
+            <input type="radio" name="closeAction" value="minimize" />
+            <span>
+              <strong>默认最小化</strong>
+              <small>关闭窗口时直接最小化到系统托盘</small>
+            </span>
+          </label>
+          <label class="radio-row">
+            <input type="radio" name="closeAction" value="quit" />
+            <span>
+              <strong>默认退出</strong>
+              <small>关闭窗口时直接退出程序</small>
             </span>
           </label>
         </fieldset>
