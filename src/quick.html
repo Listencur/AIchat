@@ -11,7 +11,10 @@
     <form class="quick-form" id="quickForm">
       <textarea id="quickPrompt" rows="3" placeholder="Enter 提交，Shift+Enter 换行"></textarea>
       <footer class="quick-toolbar">
-        <select id="quickModelSelect" aria-label="模型"></select>
+        <div class="quick-model-picker" id="quickModelPicker">
+          <button class="quick-model-trigger" id="quickModelTrigger" type="button" aria-label="模型">暂无模型</button>
+          <div class="quick-model-menu" id="quickModelMenu" hidden></div>
+        </div>
         <div class="quick-actions">
           <button class="quick-pin" id="btnQuickPin" type="button" aria-label="置顶">⌖</button>
           <button class="quick-send" id="btnQuickSubmit" type="submit" aria-label="发送">

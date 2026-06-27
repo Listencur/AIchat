@@ -24,7 +24,6 @@ body {
 }
 
 button,
-select,
 textarea {
   font: inherit;
 }
@@ -78,24 +77,112 @@ textarea::placeholder {
   padding: 0 16px 12px 24px;
 }
 
-select {
+.quick-model-picker {
+  position: relative;
   min-width: 160px;
   max-width: 360px;
+  flex: 1;
+  -webkit-app-region: no-drag;
+}
+
+.quick-model-trigger {
+  position: relative;
+  width: 100%;
   height: 32px;
   border: none;
   outline: none;
   border-radius: 18px;
-  padding: 0 34px 0 12px;
+  padding: 0 28px 0 12px;
   background: transparent;
   color: var(--text);
   cursor: pointer;
   font-size: 14px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   -webkit-app-region: no-drag;
 }
 
-select:hover,
-select:focus {
+.quick-model-trigger::after {
+  content: 'v';
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  color: var(--muted);
+  transform: translateY(-50%);
+}
+
+.quick-model-trigger:hover,
+.quick-model-trigger:focus {
   background: #202020;
+}
+
+.quick-model-trigger:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.quick-model-menu {
+  position: absolute;
+  left: 0;
+  bottom: 38px;
+  width: min(240px, calc(100vw - 120px));
+  max-height: 88px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #1b1b1b;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42);
+  overflow-y: auto;
+  z-index: 5;
+}
+
+.quick-model-menu[hidden] {
+  display: none;
+}
+
+.quick-model-menu::-webkit-scrollbar {
+  width: 6px;
+}
+
+.quick-model-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.quick-model-menu::-webkit-scrollbar-thumb {
+  background: #3a3a3a;
+  border-radius: 999px;
+}
+
+.quick-model-option {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 5px 8px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.quick-model-option:hover {
+  background: #242424;
+}
+
+.quick-model-option input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--send-bg);
+  flex-shrink: 0;
+}
+
+.quick-model-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .quick-actions {

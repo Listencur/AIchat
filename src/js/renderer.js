@@ -46,6 +46,7 @@
   let activeGroupId = 'all';
   let loadedModelIds = new Set();
   let loadingModelIds = new Set();
+  let failedModelIds = new Set();
   let splitSelecting = false;
   let splitRatios = [];
   let pendingSplitRestore = null;
@@ -92,6 +93,8 @@
       name.className = 'model-name';
       name.textContent = model.name;
       li.appendChild(name);
+
+      li.appendChild(createModelStatusDot(model.id));
 
       const check = document.createElement('span');
       check.className = 'model-check';
@@ -145,6 +148,31 @@
     return wrapper;
   }
 
+  function createModelStatusDot(modelId) {
+    const status = getModelStatus(modelId);
+    const dot = document.createElement('span');
+    dot.className = `model-status-dot ${status.type}`;
+    dot.title = status.label;
+    dot.setAttribute('aria-label', status.label);
+    return dot;
+  }
+
+  function getModelStatus(modelId) {
+    if (failedModelIds.has(modelId)) {
+      return { type: 'failed', label: '加载失败' };
+    }
+
+    if (loadingModelIds.has(modelId)) {
+      return { type: 'loading', label: '加载中' };
+    }
+
+    if (loadedModelIds.has(modelId)) {
+      return { type: 'ready', label: '已就绪' };
+    }
+
+    return { type: 'idle', label: '未运行' };
+  }
+
   function applyTheme(theme) {
     const nextTheme = theme === 'light' ? 'light' : 'dark';
     document.body.dataset.theme = nextTheme;
@@ -171,6 +199,7 @@
     if (shouldShowLoading) {
       setModelLoading(id, true);
     }
+    failedModelIds.delete(id);
     updateActive(id);
     renderModels(getVisibleModels());
 
@@ -292,7 +321,9 @@
 
       const badges = document.createElement('span');
       badges.className = 'status-badges';
-      badges.appendChild(createStatusBadge(model.loaded ? (model.isLoading ? '加载中' : '运行中') : '未运行', model.loaded ? 'running' : 'idle'));
+      const statusLabel = model.loadFailed ? '加载失败' : (model.loaded ? (model.isLoading ? '加载中' : '运行中') : '未运行');
+      const statusType = model.loadFailed ? 'failed' : (model.loaded ? 'running' : 'idle');
+      badges.appendChild(createStatusBadge(statusLabel, statusType));
       if (model.active) badges.appendChild(createStatusBadge('当前', 'active'));
       if (model.inSplit) badges.appendChild(createStatusBadge('分屏', 'split'));
 
@@ -506,10 +537,12 @@
 
     loadedModelIds = new Set(Array.isArray(state.loadedIds) ? state.loadedIds : []);
     loadingModelIds = new Set(Array.from(loadingModelIds).filter((id) => loadedModelIds.has(id)));
+    failedModelIds = new Set(Array.from(failedModelIds).filter((id) => loadedModelIds.has(id)));
 
     if (closedId) {
       splitSelection.delete(closedId);
       loadingModelIds.delete(closedId);
+      failedModelIds.delete(closedId);
     }
 
     if (state.splitMode && Array.isArray(state.splitIds) && state.splitIds.length >= 2) {
@@ -1036,6 +1069,13 @@
       if (!data || !data.id) return;
 
       setModelLoading(data.id, Boolean(data.loading));
+      if (data.failed) {
+        failedModelIds.add(data.id);
+      } else if (data.loading) {
+        failedModelIds.delete(data.id);
+      } else {
+        failedModelIds.delete(data.id);
+      }
       if (!data.loading) {
         loadedModelIds.add(data.id);
       }
@@ -1082,6 +1122,7 @@
       const modelIds = new Set(list.map((model) => model.id));
       loadedModelIds = new Set(Array.from(loadedModelIds).filter((id) => modelIds.has(id)));
       loadingModelIds = new Set(Array.from(loadingModelIds).filter((id) => modelIds.has(id)));
+      failedModelIds = new Set(Array.from(failedModelIds).filter((id) => modelIds.has(id)));
       if (hasPendingSplitRestore()) {
         pendingSplitRestore.ids = pendingSplitRestore.ids.filter((id) => modelIds.has(id));
         if (pendingSplitRestore.ids.length < 2) {

@@ -305,27 +305,38 @@ class ViewManager {
     }
   }
 
-  emitLoadingState(modelId, loading) {
+  emitLoadingState(modelId) {
     if (!this.win || this.win.isDestroyed()) {
       return;
     }
 
-    this.win.webContents.send('view:loadingChanged', { id: modelId, loading });
+    const entry = this.views.get(modelId);
+    this.win.webContents.send('view:loadingChanged', {
+      id: modelId,
+      loading: entry ? entry.loading : false,
+      failed: entry ? entry.loadFailed === true : false,
+    });
   }
 
-  setLoadingState(modelId, loading) {
+  setLoadingState(modelId, loading, options = {}) {
     const entry = this.views.get(modelId);
     if (!entry) {
       return;
     }
 
+    let changed = false;
+    if (Object.hasOwn(options, 'failed') && entry.loadFailed !== options.failed) {
+      entry.loadFailed = options.failed === true;
+      changed = true;
+    }
+
     const nextLoading = loading && !entry.hasContent;
-    if (entry.loading === nextLoading) {
+    if (entry.loading === nextLoading && !changed) {
       return;
     }
 
     entry.loading = nextLoading;
-    this.emitLoadingState(modelId, nextLoading);
+    this.emitLoadingState(modelId);
 
     if (this.splitMode || this.activeId !== modelId) {
       return;
@@ -368,14 +379,14 @@ class ViewManager {
     // ── 调试日志：排查白屏问题 ──
     view.webContents.on('did-start-loading', () => {
       debugLog(`[${model.name}] loading started`);
-      this.setLoadingState(model.id, true);
+      this.setLoadingState(model.id, true, { failed: false });
     });
     view.webContents.on('dom-ready', () => {
       const entry = this.views.get(model.id);
       if (entry) {
         entry.hasContent = true;
       }
-      this.setLoadingState(model.id, false);
+      this.setLoadingState(model.id, false, { failed: false });
     });
     const restoreEntry = this.restoreEntries.get(model.id);
     let didRestoreScroll = false;
@@ -386,7 +397,7 @@ class ViewManager {
       if (entry) {
         entry.hasContent = true;
       }
-      this.setLoadingState(model.id, false);
+      this.setLoadingState(model.id, false, { failed: false });
 
       if (didRestoreScroll || !restoreEntry || restoreEntry.scrollY <= 0) {
         return;
@@ -400,9 +411,12 @@ class ViewManager {
           .catch((error) => debugError(`[${model.name}] restore scroll failed`, error));
       }, 600);
     });
-    view.webContents.on('did-fail-load', (_e, errorCode, errorDesc) => {
+    view.webContents.on('did-fail-load', (_e, errorCode, errorDesc, _validatedUrl, isMainFrame) => {
       debugError(`[${model.name}] loading failed: ${errorCode} - ${errorDesc}`);
-      this.setLoadingState(model.id, false);
+      if (errorCode === -3 || isMainFrame === false) {
+        return;
+      }
+      this.setLoadingState(model.id, false, { failed: true });
     });
     view.webContents.on('did-stop-loading', () => {
       debugLog(`[${model.name}] loading stopped`);
@@ -416,8 +430,8 @@ class ViewManager {
     view.setVisible(false);
     view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
 
-    this.views.set(model.id, { view, model, loading: true, hasContent: false });
-    this.emitLoadingState(model.id, true);
+    this.views.set(model.id, { view, model, loading: true, hasContent: false, loadFailed: false });
+    this.emitLoadingState(model.id);
 
     // 设置代理后再加载 URL。
     const ses = view.webContents.session;
@@ -906,6 +920,7 @@ class ViewManager {
           title: webContents ? webContents.getTitle() : '',
           url: webContents ? webContents.getURL() : model.url,
           isLoading: entry ? entry.loading || (webContents ? webContents.isLoading() : false) : false,
+          loadFailed: entry ? entry.loadFailed === true : false,
           processId,
           memoryMb: processId && memoryByPid.has(processId) ? memoryByPid.get(processId) : null,
         };

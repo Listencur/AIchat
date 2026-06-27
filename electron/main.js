@@ -62,6 +62,7 @@ const DEFAULT_SETTINGS = {
 const DEFAULT_QUICK_STATE = {
   draft: '',
   lastModelId: '',
+  lastModelIds: [],
   submitMode: 'open',
   pinned: false,
   history: [],
@@ -204,10 +205,19 @@ function saveSettings(settings) {
 function normalizeQuickState(state) {
   const raw = state && typeof state === 'object' ? state : {};
   const history = Array.isArray(raw.history) ? raw.history : [];
+  const lastModelIds = Array.isArray(raw.lastModelIds)
+    ? raw.lastModelIds
+      .map((id) => String(id))
+      .filter(Boolean)
+      .filter((id, index, list) => list.indexOf(id) === index)
+      .slice(0, 20)
+    : [];
+  const lastModelId = typeof raw.lastModelId === 'string' ? raw.lastModelId : '';
 
   return {
     draft: typeof raw.draft === 'string' ? raw.draft.slice(0, 10000) : '',
-    lastModelId: typeof raw.lastModelId === 'string' ? raw.lastModelId : '',
+    lastModelId,
+    lastModelIds: lastModelIds.length > 0 ? lastModelIds : (lastModelId ? [lastModelId] : []),
     submitMode: raw.submitMode === 'copy' ? 'copy' : 'open',
     pinned: raw.pinned === true,
     history: history
@@ -911,9 +921,18 @@ function registerGlobalShortcut(settings) {
 async function submitQuickAction(payload) {
   const rawPayload = payload && typeof payload === 'object' ? payload : {};
   const modelId = typeof rawPayload.modelId === 'string' ? rawPayload.modelId : '';
+  const requestedIds = Array.isArray(rawPayload.modelIds)
+    ? rawPayload.modelIds.map((id) => String(id)).filter(Boolean)
+    : [];
   const prompt = typeof rawPayload.prompt === 'string' ? rawPayload.prompt.trim() : '';
   const models = loadModels();
-  const model = models.find((item) => item.id === modelId) || models[0];
+  const ids = (requestedIds.length > 0 ? requestedIds : [modelId])
+    .filter((id, index, list) => id && list.indexOf(id) === index);
+  const selectedModels = ids
+    .map((id) => models.find((item) => item.id === id))
+    .filter(Boolean);
+  const targetModels = selectedModels.length > 0 ? selectedModels : (models[0] ? [models[0]] : []);
+  const primaryModel = targetModels[0] || null;
 
   if (prompt) {
     clipboard.writeText(prompt);
@@ -921,7 +940,8 @@ async function submitQuickAction(payload) {
 
   updateQuickState({
     draft: '',
-    lastModelId: model ? model.id : modelId,
+    lastModelId: primaryModel ? primaryModel.id : modelId,
+    lastModelIds: targetModels.map((model) => model.id),
     submitMode: 'open',
   });
 
@@ -931,13 +951,24 @@ async function submitQuickAction(payload) {
 
   showMainWindow();
 
-  if (!model || !viewManager) {
+  if (targetModels.length === 0 || !viewManager) {
     return { ok: false, mode: 'open' };
   }
 
-  const submitResult = await viewManager.submitPrompt(model.id, model, prompt);
-  mainWindow.webContents.send('view:switched', { id: model.id });
-  return { ok: submitResult.ok, mode: 'open', modelId: model.id, submitResult };
+  const results = [];
+  for (const model of targetModels) {
+    const submitResult = await viewManager.submitPrompt(model.id, model, prompt);
+    mainWindow.webContents.send('view:switched', { id: model.id });
+    results.push({ modelId: model.id, ok: submitResult.ok, submitResult });
+  }
+
+  return {
+    ok: results.some((result) => result.ok),
+    mode: 'open',
+    modelId: primaryModel.id,
+    modelIds: targetModels.map((model) => model.id),
+    results,
+  };
 }
 
 // ── IPC 处理器 ──
