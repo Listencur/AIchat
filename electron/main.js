@@ -47,6 +47,7 @@ const userModelsPath = path.join(app.getPath('userData'), 'models.json');
 const userSettingsPath = path.join(app.getPath('userData'), 'settings.json');
 const userGroupsPath = path.join(app.getPath('userData'), 'groups.json');
 const userSnapshotPath = path.join(app.getPath('userData'), 'snapshot.json');
+const userQuickStatePath = path.join(app.getPath('userData'), 'quick-state.json');
 const userModelIconsDir = path.join(app.getPath('userData'), 'model-icons');
 const appIconPath = path.join(__dirname, '..', 'assets', 'app-icon.ico');
 const DEFAULT_SETTINGS = {
@@ -56,8 +57,15 @@ const DEFAULT_SETTINGS = {
   shortcutEnabled: true,
   shortcutAccelerator: 'Ctrl+Shift+Space',
 };
+const DEFAULT_QUICK_STATE = {
+  draft: '',
+  lastModelId: '',
+  submitMode: 'open',
+  history: [],
+};
 const PROXY_URL_PATTERN = /^(https?|socks5?):\/\/.+/;
 const SNAPSHOT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 30;
+const QUICK_HISTORY_LIMIT = 10;
 const MODIFIER_LABELS = new Map([
   ['CTRL', 'Ctrl'],
   ['CONTROL', 'Ctrl'],
@@ -184,6 +192,59 @@ function saveSettings(settings) {
   const normalized = normalizeSettings(settings);
   fs.writeFileSync(userSettingsPath, JSON.stringify(normalized, null, 2), 'utf-8');
   return normalized;
+}
+
+function normalizeQuickState(state) {
+  const raw = state && typeof state === 'object' ? state : {};
+  const history = Array.isArray(raw.history) ? raw.history : [];
+
+  return {
+    draft: typeof raw.draft === 'string' ? raw.draft.slice(0, 10000) : '',
+    lastModelId: typeof raw.lastModelId === 'string' ? raw.lastModelId : '',
+    submitMode: raw.submitMode === 'copy' ? 'copy' : 'open',
+    history: history
+      .filter((item) => typeof item === 'string' && item.trim())
+      .map((item) => item.trim())
+      .filter((item, index, list) => list.indexOf(item) === index)
+      .slice(0, QUICK_HISTORY_LIMIT),
+  };
+}
+
+function loadQuickState() {
+  if (!fs.existsSync(userQuickStatePath)) {
+    saveQuickState(DEFAULT_QUICK_STATE);
+    return { ...DEFAULT_QUICK_STATE };
+  }
+
+  return normalizeQuickState(readJsonFile(userQuickStatePath, DEFAULT_QUICK_STATE));
+}
+
+function saveQuickState(state) {
+  const normalized = normalizeQuickState(state);
+  fs.writeFileSync(userQuickStatePath, JSON.stringify(normalized, null, 2), 'utf-8');
+  return normalized;
+}
+
+function updateQuickState(patch) {
+  return saveQuickState({
+    ...loadQuickState(),
+    ...(patch && typeof patch === 'object' ? patch : {}),
+  });
+}
+
+function addQuickHistory(prompt, patch = {}) {
+  const text = typeof prompt === 'string' ? prompt.trim() : '';
+  const current = loadQuickState();
+
+  if (!text) {
+    return updateQuickState(patch);
+  }
+
+  return saveQuickState({
+    ...current,
+    ...patch,
+    history: [text, ...current.history.filter((item) => item !== text)].slice(0, QUICK_HISTORY_LIMIT),
+  });
 }
 
 function normalizeGroupsData(data) {
@@ -729,17 +790,17 @@ async function quitApplication() {
 
 function createQuickWindow() {
   quickWindow = new BrowserWindow({
-    width: 520,
-    height: 220,
+    width: 620,
+    height: 430,
     minWidth: 420,
-    minHeight: 180,
+    minHeight: 360,
     show: false,
-    resizable: false,
+    resizable: true,
     maximizable: false,
     minimizable: false,
     title: '快速提问',
     icon: getAppIcon(),
-    backgroundColor: '#1e1e2e',
+    backgroundColor: '#141414',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -811,6 +872,7 @@ async function submitQuickAction(payload) {
   const rawPayload = payload && typeof payload === 'object' ? payload : {};
   const modelId = typeof rawPayload.modelId === 'string' ? rawPayload.modelId : '';
   const prompt = typeof rawPayload.prompt === 'string' ? rawPayload.prompt.trim() : '';
+  const submitMode = rawPayload.mode === 'copy' ? 'copy' : 'open';
   const models = loadModels();
   const model = models.find((item) => item.id === modelId) || models[0];
 
@@ -818,19 +880,29 @@ async function submitQuickAction(payload) {
     clipboard.writeText(prompt);
   }
 
+  addQuickHistory(prompt, {
+    draft: '',
+    lastModelId: model ? model.id : modelId,
+    submitMode,
+  });
+
   if (quickWindow) {
     quickWindow.hide();
+  }
+
+  if (submitMode === 'copy') {
+    return { ok: true, mode: submitMode };
   }
 
   showMainWindow();
 
   if (!model || !viewManager) {
-    return false;
+    return { ok: false, mode: submitMode };
   }
 
   await viewManager.switchTo(model.id, model);
   mainWindow.webContents.send('view:switched', { id: model.id });
-  return true;
+  return { ok: true, mode: submitMode, modelId: model.id };
 }
 
 // ── IPC 处理器 ──
@@ -1181,6 +1253,14 @@ function registerIPC() {
 
   ipcMain.handle('quick:submit', async (_event, payload) => {
     return submitQuickAction(payload);
+  });
+
+  ipcMain.handle('quick:stateGet', () => {
+    return loadQuickState();
+  });
+
+  ipcMain.handle('quick:stateSet', (_event, patch) => {
+    return updateQuickState(patch);
   });
 
   ipcMain.handle('quick:hide', () => {

@@ -125,6 +125,12 @@ contextBridge.exposeInMainWorld('api', {
     /** 提交快速输入 */
     submit: (payload) => ipcRenderer.invoke('quick:submit', payload),
 
+    /** 获取快速输入状态 */
+    stateGet: () => ipcRenderer.invoke('quick:stateGet'),
+
+    /** 保存快速输入状态 */
+    stateSet: (patch) => ipcRenderer.invoke('quick:stateSet', patch),
+
     /** 隐藏迷你窗口 */
     hide: () => ipcRenderer.invoke('quick:hide'),
 
