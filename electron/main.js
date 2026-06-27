@@ -46,6 +46,7 @@ const userModelsPath = path.join(app.getPath('userData'), 'models.json');
 const userSettingsPath = path.join(app.getPath('userData'), 'settings.json');
 const userGroupsPath = path.join(app.getPath('userData'), 'groups.json');
 const userSnapshotPath = path.join(app.getPath('userData'), 'snapshot.json');
+const appIconPath = path.join(__dirname, '..', 'assets', 'app-icon.ico');
 const DEFAULT_SETTINGS = {
   proxyMode: 'system',
   proxyUrl: 'http://127.0.0.1:7897',
@@ -78,6 +79,10 @@ const KEY_LABELS = new Map([
   ['ARROWLEFT', 'Left'],
   ['ARROWRIGHT', 'Right'],
 ]);
+
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.ai-chat-hub.desktop');
+}
 
 function readJsonFile(filePath, fallback) {
   try {
@@ -152,6 +157,15 @@ function toElectronAccelerator(shortcut) {
     .split('+')
     .map((part) => (part === 'Ctrl' ? 'CommandOrControl' : part))
     .join('+');
+}
+
+function getAppIcon(size = null) {
+  const icon = nativeImage.createFromPath(appIconPath);
+  if (!icon.isEmpty()) {
+    return size ? icon.resize({ width: size, height: size }) : icon;
+  }
+
+  return nativeImage.createEmpty();
 }
 
 function loadSettings() {
@@ -422,6 +436,7 @@ function createWindow() {
     height: 800,
     minWidth: 800,
     minHeight: 600,
+    icon: getAppIcon(),
     backgroundColor: '#1e1e2e',
     title: 'AI对话聚合',
     webPreferences: {
@@ -490,24 +505,12 @@ function createWindow() {
   });
 }
 
-function createTrayIcon() {
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-      <rect width="32" height="32" rx="7" fill="#7c7cff"/>
-      <path d="M8 22l3.4-12h3.2L18 22h-2.9l-.6-2.5h-3.2l-.6 2.5H8zm4-5h2l-1-4.2L12 17zm7.3 5V10h2.8v12h-2.8z" fill="#fff"/>
-    </svg>
-  `;
-  return nativeImage
-    .createFromDataURL(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`)
-    .resize({ width: 16, height: 16 });
-}
-
 function createTray() {
   if (tray) {
     return;
   }
 
-  tray = new Tray(createTrayIcon());
+  tray = new Tray(getAppIcon(16));
   tray.setToolTip('AI 对话聚合');
   tray.setContextMenu(Menu.buildFromTemplate([
     {
@@ -571,6 +574,7 @@ function createQuickWindow() {
     maximizable: false,
     minimizable: false,
     title: '快速提问',
+    icon: getAppIcon(),
     backgroundColor: '#1e1e2e',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
