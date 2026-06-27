@@ -204,11 +204,22 @@
     }
 
     await window.api.view.setSidebarCollapsed(sidebarCollapsed);
-    renderSplitResizers();
+    scheduleSplitResizerRefresh();
   }
 
   function toggleSidebarCollapsed() {
     setSidebarCollapsed(!sidebarCollapsed);
+  }
+
+  function scheduleSplitResizerRefresh() {
+    renderSplitResizers();
+
+    window.requestAnimationFrame(() => {
+      renderSplitResizers();
+      window.requestAnimationFrame(renderSplitResizers);
+    });
+
+    window.setTimeout(renderSplitResizers, 220);
   }
 
   function setSplitDirection(direction, syncView = true) {
