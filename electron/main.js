@@ -1,6 +1,17 @@
 'use strict';
 
-const { app, BrowserWindow, clipboard, globalShortcut, ipcMain, session } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  Tray,
+  clipboard,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  nativeImage,
+  session,
+} = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { ViewManager, SIDEBAR_WIDTH } = require('./view-manager');
@@ -11,7 +22,11 @@ let mainWindow = null;
 let viewManager = null;
 /** @type {BrowserWindow} */
 let quickWindow = null;
+/** @type {Tray} */
+let tray = null;
 let registeredShortcut = null;
+let appIsQuitting = false;
+let closeChoiceInProgress = false;
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 const diskCachePath = path.join(app.getPath('temp'), 'ai-chat-hub-cache');
@@ -434,18 +449,34 @@ function createWindow() {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
-  let closeAfterSnapshot = false;
   mainWindow.on('close', async (event) => {
-    if (closeAfterSnapshot) return;
+    if (appIsQuitting) return;
 
-    if (loadSettings().restoreSnapshot && viewManager) {
-      event.preventDefault();
-      closeAfterSnapshot = true;
-      try {
-        await persistSessionSnapshot();
-      } finally {
-        mainWindow.close();
-      }
+    event.preventDefault();
+    if (closeChoiceInProgress) {
+      return;
+    }
+
+    closeChoiceInProgress = true;
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      title: '关闭 AI 对话聚合',
+      message: '要退出程序，还是最小化到系统托盘？',
+      detail: '最小化到托盘后，程序仍在后台运行，全局快捷键仍可唤起快速输入窗口。',
+      buttons: ['最小化到托盘', '退出程序', '取消'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+    });
+    closeChoiceInProgress = false;
+
+    if (result.response === 0) {
+      minimizeToTray();
+      return;
+    }
+
+    if (result.response === 1) {
+      await quitApplication();
     }
   });
 
@@ -457,6 +488,76 @@ function createWindow() {
     mainWindow = null;
     viewManager = null;
   });
+}
+
+function createTrayIcon() {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+      <rect width="32" height="32" rx="7" fill="#7c7cff"/>
+      <path d="M8 22l3.4-12h3.2L18 22h-2.9l-.6-2.5h-3.2l-.6 2.5H8zm4-5h2l-1-4.2L12 17zm7.3 5V10h2.8v12h-2.8z" fill="#fff"/>
+    </svg>
+  `;
+  return nativeImage
+    .createFromDataURL(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`)
+    .resize({ width: 16, height: 16 });
+}
+
+function createTray() {
+  if (tray) {
+    return;
+  }
+
+  tray = new Tray(createTrayIcon());
+  tray.setToolTip('AI 对话聚合');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    {
+      label: '显示主窗口',
+      click: showMainWindow,
+    },
+    {
+      label: '快速提问',
+      click: showQuickWindow,
+    },
+    { type: 'separator' },
+    {
+      label: '退出程序',
+      click: () => {
+        quitApplication();
+      },
+    },
+  ]));
+
+  tray.on('click', showMainWindow);
+  tray.on('double-click', showMainWindow);
+}
+
+function minimizeToTray() {
+  if (!mainWindow) return;
+
+  createTray();
+  mainWindow.hide();
+}
+
+async function quitApplication() {
+  if (appIsQuitting) return;
+
+  appIsQuitting = true;
+
+  try {
+    await persistSessionSnapshot();
+  } catch (error) {
+    console.error('[main] Failed to save snapshot before quit', error);
+  }
+
+  if (quickWindow && !quickWindow.isDestroyed()) {
+    quickWindow.close();
+  }
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.close();
+  } else {
+    app.quit();
+  }
 }
 
 function createQuickWindow() {
@@ -809,12 +910,7 @@ if (!gotSingleInstanceLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (!mainWindow) return;
-
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore();
-    }
-    mainWindow.focus();
+    showMainWindow();
   });
 
   app.whenReady().then(async () => {
@@ -822,6 +918,7 @@ if (!gotSingleInstanceLock) {
     await applyProxySettings(settings);
 
     createWindow();
+    createTray();
     registerIPC();
     registerGlobalShortcut(settings);
 
@@ -833,12 +930,17 @@ if (!gotSingleInstanceLock) {
   });
 
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
+    if (appIsQuitting && process.platform !== 'darwin') {
       app.quit();
     }
   });
 
   app.on('will-quit', () => {
+    appIsQuitting = true;
     globalShortcut.unregisterAll();
+    if (tray) {
+      tray.destroy();
+      tray = null;
+    }
   });
 }
