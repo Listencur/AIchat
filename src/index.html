@@ -18,7 +18,9 @@
         <button class="icon-button" id="btnSettings" title="设置" aria-label="设置">⚙</button>
       </div>
     </div>
-    <div class="window-drag-region" aria-hidden="true"></div>
+    <div class="window-drag-region" aria-hidden="true">
+      <span class="window-title" id="windowTitle"></span>
+    </div>
     <div class="window-controls">
       <button class="window-control" id="btnWindowMinimize" type="button" title="最小化" aria-label="最小化">−</button>
       <button class="window-control" id="btnWindowMaximize" type="button" title="最大化/还原" aria-label="最大化/还原">□</button>
@@ -60,8 +62,8 @@
           <div class="split-actions" id="splitActions" hidden>
             <span class="split-hint" id="splitHint">选择 2-3 个模型</span>
             <div class="split-direction" id="splitDirection">
-              <button class="btn-text active" id="btnSplitHorizontal" type="button">左右</button>
-              <button class="btn-text" id="btnSplitVertical" type="button">上下</button>
+              <button class="btn-text active" id="btnSplitHorizontal" type="button" title="左右分屏" aria-label="左右分屏">↔</button>
+              <button class="btn-text" id="btnSplitVertical" type="button" title="上下分屏" aria-label="上下分屏">↕</button>
             </div>
             <button class="btn-text" id="btnRestoreSplit" type="button" hidden>恢复分屏</button>
             <button class="btn-text" id="btnExitSplit" type="button">退出</button>
@@ -80,6 +82,7 @@
         <div class="placeholder-content">
           <div class="loading-spinner" aria-hidden="true"></div>
           <p id="placeholderText">从左侧选择一个 AI 模型开始对话</p>
+          <button class="placeholder-action" id="btnPlaceholderRefresh" type="button" hidden>刷新</button>
         </div>
       </div>
       <div class="split-resizers" id="splitResizers" hidden></div>

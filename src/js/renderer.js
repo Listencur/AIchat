@@ -20,6 +20,7 @@
   const windowMinimizeBtn = document.getElementById('btnWindowMinimize');
   const windowMaximizeBtn = document.getElementById('btnWindowMaximize');
   const windowCloseBtn = document.getElementById('btnWindowClose');
+  const windowTitle = document.getElementById('windowTitle');
   const statusBtn = document.getElementById('btnStatus');
   const statusModal = document.getElementById('modalStatus');
   const statusCloseBtn = document.getElementById('btnCloseStatus');
@@ -30,6 +31,8 @@
   const modelList = document.getElementById('modelList');
   const modelContextMenu = document.getElementById('modelContextMenu');
   const mainPlaceholder = document.getElementById('mainPlaceholder');
+  const placeholderText = document.getElementById('placeholderText');
+  const placeholderRefreshBtn = document.getElementById('btnPlaceholderRefresh');
   const splitToggleBtn = document.getElementById('btnToggleSplit');
   const exportConversationBtn = document.getElementById('btnExportConversation');
   const splitActions = document.getElementById('splitActions');
@@ -276,9 +279,32 @@
   function updateMainPlaceholder() {
     const splitVisible = splitSelecting && splitSelection.size >= 2;
     const loadingActive = Boolean(activeModelId && loadingModelIds.has(activeModelId) && !splitVisible);
+    const failedActive = Boolean(activeModelId && failedModelIds.has(activeModelId) && !splitVisible);
+    const emptyActive = !activeModelId;
 
     mainArea.classList.toggle('is-loading', loadingActive);
-    mainPlaceholder.style.display = (!activeModelId || loadingActive) ? 'flex' : 'none';
+    mainArea.classList.toggle('is-failed', failedActive);
+    mainArea.classList.toggle('is-empty', emptyActive);
+    mainPlaceholder.style.display = (emptyActive || loadingActive || failedActive) ? 'flex' : 'none';
+    placeholderRefreshBtn.hidden = !failedActive;
+
+    if (failedActive) {
+      placeholderText.textContent = '页面加载失败';
+    } else if (emptyActive) {
+      placeholderText.textContent = '选择一个模型开始';
+    } else {
+      placeholderText.textContent = '正在加载';
+    }
+  }
+
+  async function refreshPlaceholderModel() {
+    if (!activeModelId) return;
+
+    failedModelIds.delete(activeModelId);
+    setModelLoading(activeModelId, true);
+    renderModels(getVisibleModels());
+    await window.api.view.refresh();
+    updateMainPlaceholder();
   }
 
   async function closeModel(id) {
@@ -1032,11 +1058,19 @@
    */
   function updateActive(id) {
     activeModelId = id;
+    updateWindowTitle();
     updateMainPlaceholder();
 
     document.querySelectorAll('.model-item').forEach((item) => {
       item.classList.toggle('active', item.dataset.id === id);
     });
+  }
+
+  function updateWindowTitle() {
+    const model = modelsCache.find((item) => item.id === activeModelId);
+    const title = model ? model.name : '';
+    windowTitle.textContent = title;
+    windowTitle.title = title;
   }
 
   /**
@@ -1141,6 +1175,7 @@
       if (!data.loading) {
         loadedModelIds.add(data.id);
       }
+      updateMainPlaceholder();
       renderModels(getVisibleModels());
 
       if (statusModal.classList.contains('show')) {
@@ -1211,6 +1246,7 @@
       loadedModelIds = new Set(Array.from(loadedModelIds).filter((id) => modelIds.has(id)));
       loadingModelIds = new Set(Array.from(loadingModelIds).filter((id) => modelIds.has(id)));
       failedModelIds = new Set(Array.from(failedModelIds).filter((id) => modelIds.has(id)));
+      updateWindowTitle();
       if (hasPendingSplitRestore()) {
         pendingSplitRestore.ids = pendingSplitRestore.ids.filter((id) => modelIds.has(id));
         if (pendingSplitRestore.ids.length < 2) {
@@ -1266,6 +1302,7 @@
     splitHorizontalBtn.addEventListener('click', () => setSplitDirection('horizontal'));
     splitVerticalBtn.addEventListener('click', () => setSplitDirection('vertical'));
     exportConversationBtn.addEventListener('click', exportConversation);
+    placeholderRefreshBtn.addEventListener('click', refreshPlaceholderModel);
     sidebarToggleBtn.addEventListener('click', toggleSidebarCollapsed);
     themeBtn.addEventListener('click', toggleTheme);
     windowMinimizeBtn.addEventListener('click', () => window.api.windowControls.minimize());

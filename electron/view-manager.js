@@ -379,7 +379,7 @@ class ViewManager {
       return;
     }
 
-    if (nextLoading) {
+    if (nextLoading || entry.loadFailed) {
       entry.view.setVisible(false);
       return;
     }
@@ -531,7 +531,7 @@ class ViewManager {
 
     this.activeId = modelId;
     const entry = this.views.get(modelId);
-    view.setVisible(!entry || !entry.loading);
+    view.setVisible(!entry || (!entry.loading && !entry.loadFailed));
   }
 
   waitForWebContentsReady(webContents, timeoutMs = PROMPT_SUBMIT_TIMEOUT_MS) {
