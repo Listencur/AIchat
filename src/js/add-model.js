@@ -16,10 +16,33 @@
   const urlInput = document.getElementById('inputUrl');
   const iconInput = document.getElementById('inputIcon');
   const iconUrlInput = document.getElementById('inputIconUrl');
+  const pickLocalIconBtn = document.getElementById('btnPickLocalIcon');
+  const clearIconBtn = document.getElementById('btnClearIcon');
+  const localIconName = document.getElementById('localIconName');
+  const iconPreview = document.getElementById('modelIconPreview');
   const colorInput = document.getElementById('inputColor');
   const deleteBtn = document.getElementById('btnDeleteModel');
   const submitBtn = document.getElementById('btnSubmitModel');
   let editingModel = null;
+  let selectedLocalIconPath = '';
+
+  function updateIconPreview() {
+    const iconUrl = iconUrlInput.value.trim();
+    iconPreview.innerHTML = '';
+
+    if (iconUrl) {
+      const image = document.createElement('img');
+      image.src = iconUrl;
+      image.alt = '';
+      image.addEventListener('error', () => {
+        iconPreview.textContent = iconInput.value.trim() || '🤖';
+      }, { once: true });
+      iconPreview.appendChild(image);
+      return;
+    }
+
+    iconPreview.textContent = iconInput.value.trim() || '🤖';
+  }
 
   function resetToAddMode() {
     editingModel = null;
@@ -29,7 +52,10 @@
     form.reset();
     iconInput.value = '🤖';
     iconUrlInput.value = '';
+    selectedLocalIconPath = '';
+    localIconName.textContent = '';
     colorInput.value = '#666666';
+    updateIconPreview();
   }
 
   /** 打开弹窗 */
@@ -49,7 +75,12 @@
     urlInput.value = model.url || '';
     iconInput.value = model.icon || '🤖';
     iconUrlInput.value = model.iconUrl || '';
+    selectedLocalIconPath = '';
+    localIconName.textContent = model.iconUrl && model.iconUrl.startsWith('file:')
+      ? '已使用本地图标'
+      : '';
     colorInput.value = model.color || '#666666';
+    updateIconPreview();
     window.api.view.setVisible(false);
     modal.classList.add('show');
     nameInput.focus();
@@ -84,6 +115,7 @@
       url: url,
       icon: iconInput.value.trim() || '🤖',
       iconUrl: iconUrlInput.value.trim(),
+      localIconPath: selectedLocalIconPath,
       color: colorInput.value,
     };
 
@@ -106,11 +138,36 @@
     closeModal();
   }
 
+  async function pickLocalIcon() {
+    const icon = await window.api.models.selectIcon();
+    if (!icon) return;
+
+    selectedLocalIconPath = icon.localIconPath;
+    iconUrlInput.value = icon.iconUrl;
+    localIconName.textContent = icon.name || '本地图标';
+    updateIconPreview();
+  }
+
+  function clearIcon() {
+    selectedLocalIconPath = '';
+    iconUrlInput.value = '';
+    localIconName.textContent = '';
+    updateIconPreview();
+  }
+
   // ── 事件绑定 ──
   addBtn.addEventListener('click', openModal);
   closeBtn.addEventListener('click', closeModal);
   cancelBtn.addEventListener('click', closeModal);
   deleteBtn.addEventListener('click', handleDelete);
+  pickLocalIconBtn.addEventListener('click', pickLocalIcon);
+  clearIconBtn.addEventListener('click', clearIcon);
+  iconInput.addEventListener('input', updateIconPreview);
+  iconUrlInput.addEventListener('input', () => {
+    selectedLocalIconPath = '';
+    localIconName.textContent = '';
+    updateIconPreview();
+  });
   form.addEventListener('submit', handleSubmit);
 
   // 点击遮罩关闭

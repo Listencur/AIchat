@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('api', {
     /** 调整模型顺序 */
     reorder: (ids) => ipcRenderer.invoke('models:reorder', ids),
 
+    /** 选择本地图标 */
+    selectIcon: () => ipcRenderer.invoke('models:selectIcon'),
+
     /** 删除模型 */
     remove: (id) => ipcRenderer.invoke('models:remove', id),
 

@@ -14,6 +14,7 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
 const { ViewManager, SIDEBAR_WIDTH } = require('./view-manager');
 
 /** @type {BrowserWindow} */
@@ -46,6 +47,7 @@ const userModelsPath = path.join(app.getPath('userData'), 'models.json');
 const userSettingsPath = path.join(app.getPath('userData'), 'settings.json');
 const userGroupsPath = path.join(app.getPath('userData'), 'groups.json');
 const userSnapshotPath = path.join(app.getPath('userData'), 'snapshot.json');
+const userModelIconsDir = path.join(app.getPath('userData'), 'model-icons');
 const appIconPath = path.join(__dirname, '..', 'assets', 'app-icon.ico');
 const DEFAULT_SETTINGS = {
   proxyMode: 'system',
@@ -79,6 +81,7 @@ const KEY_LABELS = new Map([
   ['ARROWLEFT', 'Left'],
   ['ARROWRIGHT', 'Right'],
 ]);
+const LOCAL_ICON_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.ico', '.svg']);
 
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.ai-chat-hub.desktop');
@@ -237,6 +240,47 @@ function buildFaviconUrl(url) {
   } catch {
     return '';
   }
+}
+
+function isSupportedIconPath(filePath) {
+  if (typeof filePath !== 'string' || !filePath) {
+    return false;
+  }
+
+  return LOCAL_ICON_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+function copyLocalModelIcon(modelId, sourcePath) {
+  if (!isSupportedIconPath(sourcePath) || !fs.existsSync(sourcePath)) {
+    return '';
+  }
+
+  const stat = fs.statSync(sourcePath);
+  if (!stat.isFile()) {
+    return '';
+  }
+
+  fs.mkdirSync(userModelIconsDir, { recursive: true });
+  const ext = path.extname(sourcePath).toLowerCase();
+  const safeId = String(modelId).replace(/[^a-z0-9_-]/gi, '-');
+  const targetPath = path.join(userModelIconsDir, `${safeId}-${Date.now()}${ext}`);
+  fs.copyFileSync(sourcePath, targetPath);
+  return pathToFileURL(targetPath).href;
+}
+
+function resolveModelIconUrl(rawConfig, modelId, url) {
+  if (rawConfig.localIconPath) {
+    const copiedUrl = copyLocalModelIcon(modelId, rawConfig.localIconPath);
+    if (copiedUrl) {
+      return copiedUrl;
+    }
+  }
+
+  if (typeof rawConfig.iconUrl === 'string' && rawConfig.iconUrl.trim()) {
+    return rawConfig.iconUrl.trim();
+  }
+
+  return buildFaviconUrl(url);
 }
 
 function normalizeModelIcon(model) {
@@ -716,14 +760,16 @@ function registerIPC() {
   // 添加模型
   ipcMain.handle('models:add', (_event, config) => {
     const models = loadModels();
+    const rawConfig = config && typeof config === 'object' ? config : {};
+    const id = generateModelId(rawConfig.name);
     const newModel = {
-      id: generateModelId(config.name),
-      name: config.name,
-      url: config.url,
-      icon: config.icon || '🤖',
-      iconUrl: buildFaviconUrl(config.url),
-      color: config.color || '#666666',
-      partition: `persist:${config.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+      id,
+      name: rawConfig.name,
+      url: rawConfig.url,
+      icon: rawConfig.icon || '🤖',
+      iconUrl: resolveModelIconUrl(rawConfig, id, rawConfig.url),
+      color: rawConfig.color || '#666666',
+      partition: `persist:${rawConfig.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
     };
     models.push(newModel);
     saveModels(models);
@@ -754,9 +800,7 @@ function registerIPC() {
       name,
       url,
       icon: typeof rawConfig.icon === 'string' && rawConfig.icon.trim() ? rawConfig.icon.trim() : '🤖',
-      iconUrl: typeof rawConfig.iconUrl === 'string' && rawConfig.iconUrl
-        ? rawConfig.iconUrl
-        : buildFaviconUrl(url),
+      iconUrl: resolveModelIconUrl(rawConfig, id, url),
       color: typeof rawConfig.color === 'string' && rawConfig.color ? rawConfig.color : '#666666',
     };
 
@@ -769,6 +813,32 @@ function registerIPC() {
 
     mainWindow.webContents.send('models:updated', models);
     return updatedModel;
+  });
+
+  // 选择本地图标
+  ipcMain.handle('models:selectIcon', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择模型图标',
+      properties: ['openFile'],
+      filters: [
+        { name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'ico', 'svg'] },
+      ],
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    const filePath = result.filePaths[0];
+    if (!isSupportedIconPath(filePath)) {
+      return null;
+    }
+
+    return {
+      localIconPath: filePath,
+      iconUrl: pathToFileURL(filePath).href,
+      name: path.basename(filePath),
+    };
   });
 
   // 模型排序

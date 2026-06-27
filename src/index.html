@@ -177,7 +177,13 @@
         </label>
         <label class="form-row">
           <span class="form-label">图标地址 (可选)</span>
-          <input type="url" id="inputIconUrl" name="iconUrl" placeholder="自动使用网站 favicon" />
+          <input type="text" id="inputIconUrl" name="iconUrl" placeholder="自动使用网站 favicon" />
+          <div class="icon-picker-row">
+            <span class="icon-preview" id="modelIconPreview">🤖</span>
+            <button type="button" class="btn-small" id="btnPickLocalIcon">选择本地图标</button>
+            <button type="button" class="btn-small" id="btnClearIcon">清除</button>
+            <span class="icon-file-name" id="localIconName"></span>
+          </div>
         </label>
         <label class="form-row">
           <span class="form-label">主题色 (可选)</span>
