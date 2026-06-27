@@ -5,7 +5,8 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --dev"
+    "dev": "electron . --dev",
+    "build:launcher": "powershell -ExecutionPolicy Bypass -File scripts/build-launcher.ps1"
   },
   "author": "",
   "license": "MIT",
