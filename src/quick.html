@@ -8,45 +8,13 @@
 </head>
 <body>
   <main class="quick-shell">
-    <header class="quick-header">
-      <div>
-        <h1>本地随时向AI模型提问</h1>
-        <p>输入后会先复制到剪贴板，再按你的选择处理</p>
-      </div>
-      <button class="quick-close" id="btnQuickClose" type="button" aria-label="关闭">&times;</button>
-    </header>
     <form class="quick-form" id="quickForm">
-      <label class="quick-row">
-        <span>内容</span>
-        <textarea id="quickPrompt" rows="5" placeholder="本地随时向AI模型提问"></textarea>
-      </label>
-      <div class="quick-grid">
-        <label class="quick-row">
-          <span>模型</span>
-          <select id="quickModelSelect"></select>
-        </label>
-        <fieldset class="quick-mode" aria-label="提交方式">
-          <legend>方式</legend>
-          <label>
-            <input type="radio" name="quickMode" value="open" checked />
-            <span>复制并打开</span>
-          </label>
-          <label>
-            <input type="radio" name="quickMode" value="copy" />
-            <span>仅复制</span>
-          </label>
-        </fieldset>
-      </div>
-      <section class="quick-history">
-        <div class="quick-history-header">
-          <span>最近输入</span>
-          <button type="button" id="btnClearDraft">清空</button>
-        </div>
-        <div class="quick-history-list" id="quickHistoryList"></div>
-      </section>
-      <footer class="quick-actions">
-        <span class="quick-note" id="quickNote">Enter 提交，Shift+Enter 换行</span>
-        <button type="submit" id="btnQuickSubmit">提交</button>
+      <textarea id="quickPrompt" rows="3" placeholder="Enter 提交，Shift+Enter 换行"></textarea>
+      <footer class="quick-toolbar">
+        <select id="quickModelSelect" aria-label="模型"></select>
+        <button class="quick-send" id="btnQuickSubmit" type="submit" aria-label="发送">
+          <span>↑</span>
+        </button>
       </footer>
     </form>
   </main>

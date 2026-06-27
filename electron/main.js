@@ -664,6 +664,7 @@ function createWindow() {
     icon: getAppIcon(),
     backgroundColor: '#1e1e2e',
     title: 'AI对话聚合',
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -790,17 +791,21 @@ async function quitApplication() {
 
 function createQuickWindow() {
   quickWindow = new BrowserWindow({
-    width: 620,
-    height: 430,
-    minWidth: 420,
-    minHeight: 360,
+    width: 820,
+    height: 180,
+    minWidth: 560,
+    minHeight: 150,
     show: false,
-    resizable: true,
+    frame: false,
+    transparent: true,
+    resizable: false,
     maximizable: false,
     minimizable: false,
+    skipTaskbar: true,
     title: '快速提问',
     icon: getAppIcon(),
-    backgroundColor: '#141414',
+    backgroundColor: '#00000000',
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -872,7 +877,6 @@ async function submitQuickAction(payload) {
   const rawPayload = payload && typeof payload === 'object' ? payload : {};
   const modelId = typeof rawPayload.modelId === 'string' ? rawPayload.modelId : '';
   const prompt = typeof rawPayload.prompt === 'string' ? rawPayload.prompt.trim() : '';
-  const submitMode = rawPayload.mode === 'copy' ? 'copy' : 'open';
   const models = loadModels();
   const model = models.find((item) => item.id === modelId) || models[0];
 
@@ -880,29 +884,25 @@ async function submitQuickAction(payload) {
     clipboard.writeText(prompt);
   }
 
-  addQuickHistory(prompt, {
+  updateQuickState({
     draft: '',
     lastModelId: model ? model.id : modelId,
-    submitMode,
+    submitMode: 'open',
   });
 
   if (quickWindow) {
     quickWindow.hide();
   }
 
-  if (submitMode === 'copy') {
-    return { ok: true, mode: submitMode };
-  }
-
   showMainWindow();
 
   if (!model || !viewManager) {
-    return { ok: false, mode: submitMode };
+    return { ok: false, mode: 'open' };
   }
 
   await viewManager.switchTo(model.id, model);
   mainWindow.webContents.send('view:switched', { id: model.id });
-  return { ok: true, mode: submitMode, modelId: model.id };
+  return { ok: true, mode: 'open', modelId: model.id };
 }
 
 // ── IPC 处理器 ──
@@ -1284,6 +1284,7 @@ if (!gotSingleInstanceLock) {
     const settings = loadSettings();
     await applyProxySettings(settings);
 
+    Menu.setApplicationMenu(null);
     createWindow();
     createTray();
     registerIPC();
