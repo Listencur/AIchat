@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('api', {
     /** 编辑模型 */
     update: (id, config) => ipcRenderer.invoke('models:update', id, config),
 
+    /** 调整模型顺序 */
+    reorder: (ids) => ipcRenderer.invoke('models:reorder', ids),
+
     /** 删除模型 */
     remove: (id) => ipcRenderer.invoke('models:remove', id),
 

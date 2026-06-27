@@ -15,6 +15,7 @@
   const nameInput = document.getElementById('inputName');
   const urlInput = document.getElementById('inputUrl');
   const iconInput = document.getElementById('inputIcon');
+  const iconUrlInput = document.getElementById('inputIconUrl');
   const colorInput = document.getElementById('inputColor');
   const deleteBtn = document.getElementById('btnDeleteModel');
   const submitBtn = document.getElementById('btnSubmitModel');
@@ -27,6 +28,7 @@
     deleteBtn.hidden = true;
     form.reset();
     iconInput.value = '🤖';
+    iconUrlInput.value = '';
     colorInput.value = '#666666';
   }
 
@@ -46,6 +48,7 @@
     nameInput.value = model.name || '';
     urlInput.value = model.url || '';
     iconInput.value = model.icon || '🤖';
+    iconUrlInput.value = model.iconUrl || '';
     colorInput.value = model.color || '#666666';
     window.api.view.setVisible(false);
     modal.classList.add('show');
@@ -80,6 +83,7 @@
       name: name,
       url: url,
       icon: iconInput.value.trim() || '🤖',
+      iconUrl: iconUrlInput.value.trim(),
       color: colorInput.value,
     };
 

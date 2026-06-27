@@ -226,6 +226,29 @@ function isRestorableUrl(url) {
   }
 }
 
+function buildFaviconUrl(url) {
+  if (typeof url !== 'string' || !url) {
+    return '';
+  }
+
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}/favicon.ico`;
+  } catch {
+    return '';
+  }
+}
+
+function normalizeModelIcon(model) {
+  return {
+    ...model,
+    icon: model.icon || '🤖',
+    iconUrl: typeof model.iconUrl === 'string' && model.iconUrl
+      ? model.iconUrl
+      : buildFaviconUrl(model.url),
+  };
+}
+
 function normalizeSnapshot(data) {
   const raw = data && typeof data === 'object' ? data : {};
   const savedAt = typeof raw.savedAt === 'string' ? raw.savedAt : '';
@@ -334,7 +357,7 @@ function writeUserModelsData(data) {
 function buildInitialUserModelsData(defaultData) {
   return {
     configVersion: defaultData.configVersion,
-    models: defaultData.models,
+    models: defaultData.models.map(normalizeModelIcon),
     removedDefaultModelIds: [],
   };
 }
@@ -346,28 +369,41 @@ function syncUserModelsData(userData, defaultData) {
     : [];
 
   const defaultIds = new Set(defaultData.models.map((model) => model.id));
+  const defaultById = new Map(defaultData.models.map((model) => [model.id, model]));
   const removedSet = new Set(removedDefaultModelIds);
-  const userById = new Map(userModels.map((model) => [model.id, model]));
+  const seenIds = new Set();
 
   const models = [];
 
-  for (const defaultModel of defaultData.models) {
-    const existing = userById.get(defaultModel.id);
-    if (existing) {
-      models.push({
-        ...defaultModel,
-        ...existing,
-        id: defaultModel.id,
-        partition: existing.partition || defaultModel.partition,
-      });
-    } else if (!removedSet.has(defaultModel.id)) {
-      models.push(defaultModel);
+  for (const userModel of userModels) {
+    if (!userModel || !userModel.id || seenIds.has(userModel.id)) {
+      continue;
     }
+
+    if (defaultIds.has(userModel.id)) {
+      if (removedSet.has(userModel.id)) {
+        continue;
+      }
+
+      const defaultModel = defaultById.get(userModel.id);
+      models.push(normalizeModelIcon({
+        ...defaultModel,
+        ...userModel,
+        id: defaultModel.id,
+        partition: userModel.partition || defaultModel.partition,
+      }));
+      seenIds.add(userModel.id);
+      continue;
+    }
+
+    models.push(normalizeModelIcon(userModel));
+    seenIds.add(userModel.id);
   }
 
-  for (const userModel of userModels) {
-    if (!defaultIds.has(userModel.id)) {
-      models.push(userModel);
+  for (const defaultModel of defaultData.models) {
+    if (!seenIds.has(defaultModel.id) && !removedSet.has(defaultModel.id)) {
+      models.push(normalizeModelIcon(defaultModel));
+      seenIds.add(defaultModel.id);
     }
   }
 
@@ -685,6 +721,7 @@ function registerIPC() {
       name: config.name,
       url: config.url,
       icon: config.icon || '🤖',
+      iconUrl: buildFaviconUrl(config.url),
       color: config.color || '#666666',
       partition: `persist:${config.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
     };
@@ -717,6 +754,9 @@ function registerIPC() {
       name,
       url,
       icon: typeof rawConfig.icon === 'string' && rawConfig.icon.trim() ? rawConfig.icon.trim() : '🤖',
+      iconUrl: typeof rawConfig.iconUrl === 'string' && rawConfig.iconUrl
+        ? rawConfig.iconUrl
+        : buildFaviconUrl(url),
       color: typeof rawConfig.color === 'string' && rawConfig.color ? rawConfig.color : '#666666',
     };
 
@@ -729,6 +769,36 @@ function registerIPC() {
 
     mainWindow.webContents.send('models:updated', models);
     return updatedModel;
+  });
+
+  // 模型排序
+  ipcMain.handle('models:reorder', (_event, orderedIds) => {
+    if (!Array.isArray(orderedIds)) {
+      return loadModels();
+    }
+
+    const models = loadModels();
+    const byId = new Map(models.map((model) => [model.id, model]));
+    const nextModels = [];
+    const usedIds = new Set();
+
+    orderedIds.map(String).forEach((id) => {
+      const model = byId.get(id);
+      if (model && !usedIds.has(id)) {
+        nextModels.push(model);
+        usedIds.add(id);
+      }
+    });
+
+    models.forEach((model) => {
+      if (!usedIds.has(model.id)) {
+        nextModels.push(model);
+      }
+    });
+
+    saveModels(nextModels);
+    mainWindow.webContents.send('models:updated', nextModels);
+    return nextModels;
   });
 
   // 删除模型

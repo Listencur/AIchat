@@ -15,6 +15,7 @@
   const groupNameInput = document.getElementById('inputGroupName');
   const groupModelChecks = document.getElementById('groupModelChecks');
   const modelList = document.getElementById('modelList');
+  const modelContextMenu = document.getElementById('modelContextMenu');
   const mainPlaceholder = document.getElementById('mainPlaceholder');
   const splitToggleBtn = document.getElementById('btnToggleSplit');
   const splitActions = document.getElementById('splitActions');
@@ -32,6 +33,8 @@
   let loadedModelIds = new Set();
   let splitSelecting = false;
   let splitRatios = [];
+  let draggedModelId = null;
+  let contextModelId = null;
   const splitSelection = new Set();
 
   /**
@@ -45,7 +48,8 @@
       const li = document.createElement('li');
       li.className = 'model-item';
       li.dataset.id = model.id;
-      li.title = '右键编辑模型';
+      li.draggable = !splitSelecting;
+      li.title = '拖拽排序，右键打开菜单';
       li.style.setProperty('--model-color', model.color);
 
       if (splitSelecting) {
@@ -64,24 +68,45 @@
         li.classList.add('is-loaded');
       }
 
-      li.innerHTML = `
-        <span class="model-icon">${model.icon || '🤖'}</span>
-        <span class="model-name">${escapeHtml(model.name)}</span>
-        <button class="model-close" type="button" title="结束并释放内存" aria-label="结束 ${escapeHtml(model.name)}" ${loadedModelIds.has(model.id) ? '' : 'disabled'}>×</button>
-        <span class="model-check">✓</span>
-      `;
+      li.appendChild(createModelIcon(model));
 
-      li.querySelector('.model-close').addEventListener('click', (event) => {
+      const name = document.createElement('span');
+      name.className = 'model-name';
+      name.textContent = model.name;
+      li.appendChild(name);
+
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'model-close';
+      closeBtn.type = 'button';
+      closeBtn.title = '结束并释放内存';
+      closeBtn.setAttribute('aria-label', `结束 ${model.name}`);
+      closeBtn.textContent = '×';
+      closeBtn.disabled = !loadedModelIds.has(model.id);
+      li.appendChild(closeBtn);
+
+      const check = document.createElement('span');
+      check.className = 'model-check';
+      check.textContent = '✓';
+      li.appendChild(check);
+
+      closeBtn.addEventListener('click', (event) => {
         event.stopPropagation();
         closeModel(model.id);
       });
 
       li.addEventListener('contextmenu', (event) => {
         event.preventDefault();
-        window.modelModal.openEdit({ ...model });
+        openModelMenu(event, model.id);
       });
 
+      li.addEventListener('dragstart', (event) => startModelDrag(event, model.id));
+      li.addEventListener('dragover', handleModelDragOver);
+      li.addEventListener('dragleave', () => li.classList.remove('drag-over'));
+      li.addEventListener('drop', (event) => dropModel(event, model.id));
+      li.addEventListener('dragend', clearModelDrag);
+
       li.addEventListener('click', () => {
+        closeModelMenu();
         if (splitSelecting) {
           toggleSplitModel(model.id);
           return;
@@ -93,6 +118,27 @@
 
       modelList.appendChild(li);
     });
+  }
+
+  function createModelIcon(model) {
+    const wrapper = document.createElement('span');
+    wrapper.className = 'model-icon';
+
+    if (model.iconUrl) {
+      const image = document.createElement('img');
+      image.src = model.iconUrl;
+      image.alt = '';
+      image.addEventListener('error', () => {
+        wrapper.textContent = model.icon || '🤖';
+        wrapper.classList.add('icon-fallback');
+      }, { once: true });
+      wrapper.appendChild(image);
+      return wrapper;
+    }
+
+    wrapper.textContent = model.icon || '🤖';
+    wrapper.classList.add('icon-fallback');
+    return wrapper;
   }
 
   /**
@@ -113,6 +159,117 @@
 
     const state = await window.api.view.close(id);
     syncViewState(state, id);
+  }
+
+  async function deleteModel(id) {
+    const model = modelsCache.find((item) => item.id === id);
+    if (!model) return;
+
+    const confirmed = window.confirm(`确定删除「${model.name}」吗？`);
+    if (!confirmed) return;
+
+    await window.api.models.remove(id);
+    closeModelMenu();
+  }
+
+  function openModelMenu(event, id) {
+    contextModelId = id;
+    const isLoaded = loadedModelIds.has(id);
+    const closeAction = modelContextMenu.querySelector('[data-action="close"]');
+    closeAction.disabled = !isLoaded;
+
+    modelContextMenu.hidden = false;
+    const rect = modelContextMenu.getBoundingClientRect();
+    const left = Math.min(event.clientX, window.innerWidth - rect.width - 8);
+    const top = Math.min(event.clientY, window.innerHeight - rect.height - 8);
+    modelContextMenu.style.left = `${Math.max(8, left)}px`;
+    modelContextMenu.style.top = `${Math.max(8, top)}px`;
+  }
+
+  function closeModelMenu() {
+    contextModelId = null;
+    modelContextMenu.hidden = true;
+  }
+
+  function handleModelMenuAction(action) {
+    if (!contextModelId) return;
+
+    const model = modelsCache.find((item) => item.id === contextModelId);
+    if (!model) {
+      closeModelMenu();
+      return;
+    }
+
+    if (action === 'edit') {
+      closeModelMenu();
+      window.modelModal.openEdit({ ...model });
+      return;
+    }
+
+    if (action === 'close') {
+      closeModel(contextModelId);
+      closeModelMenu();
+      return;
+    }
+
+    if (action === 'delete') {
+      deleteModel(contextModelId);
+    }
+  }
+
+  function startModelDrag(event, id) {
+    if (splitSelecting) {
+      event.preventDefault();
+      return;
+    }
+
+    draggedModelId = id;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', id);
+    event.currentTarget.classList.add('dragging');
+  }
+
+  function handleModelDragOver(event) {
+    if (!draggedModelId || splitSelecting) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    event.currentTarget.classList.add('drag-over');
+  }
+
+  async function dropModel(event, targetId) {
+    event.preventDefault();
+    if (!draggedModelId || draggedModelId === targetId) {
+      clearModelDrag();
+      return;
+    }
+
+    const visibleIds = visibleModelsCache.map((model) => model.id);
+    const fromIndex = visibleIds.indexOf(draggedModelId);
+    const toIndex = visibleIds.indexOf(targetId);
+    if (fromIndex === -1 || toIndex === -1) {
+      clearModelDrag();
+      return;
+    }
+
+    visibleIds.splice(toIndex, 0, visibleIds.splice(fromIndex, 1)[0]);
+    const visibleQueue = visibleIds.slice();
+    const visibleSet = new Set(visibleIds);
+    const orderedIds = modelsCache.map((model) => (
+      visibleSet.has(model.id) ? visibleQueue.shift() : model.id
+    ));
+
+    const nextModels = await window.api.models.reorder(orderedIds);
+    modelsCache = nextModels.models || nextModels;
+    renderGroups(groupsCache);
+    renderModels(getVisibleModels());
+    clearModelDrag();
+  }
+
+  function clearModelDrag() {
+    draggedModelId = null;
+    document.querySelectorAll('.model-item.dragging, .model-item.drag-over').forEach((item) => {
+      item.classList.remove('dragging', 'drag-over');
+    });
   }
 
   function syncViewState(state, closedId = null) {
@@ -630,6 +787,20 @@
       syncViewState(data.state, data.id);
     });
 
+    modelContextMenu.addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-action]');
+      if (!button || button.disabled) return;
+      handleModelMenuAction(button.dataset.action);
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!modelContextMenu.hidden && !modelContextMenu.contains(event.target)) {
+        closeModelMenu();
+      }
+    });
+
+    modelList.addEventListener('scroll', closeModelMenu);
+
     splitToggleBtn.addEventListener('click', () => {
       if (splitSelecting) {
         exitSplitMode();
@@ -652,6 +823,10 @@
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && groupModal.classList.contains('show')) {
         closeGroupModal();
+      }
+
+      if (event.key === 'Escape' && !modelContextMenu.hidden) {
+        closeModelMenu();
       }
     });
 

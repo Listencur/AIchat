@@ -217,6 +217,15 @@ body {
   border-left: 3px solid transparent;
 }
 
+.model-item.dragging {
+  opacity: 0.55;
+}
+
+.model-item.drag-over {
+  background: rgba(124, 124, 255, 0.12);
+  box-shadow: inset 0 1px 0 var(--accent);
+}
+
 .model-item:hover {
   background: var(--bg-hover);
 }
@@ -229,8 +238,23 @@ body {
 .model-item .model-icon {
   font-size: 20px;
   width: 28px;
+  height: 28px;
   text-align: center;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.model-icon img {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.model-icon.icon-fallback {
+  line-height: 28px;
 }
 
 .model-item .model-name {
@@ -308,6 +332,48 @@ body {
   border-color: var(--accent);
   background: var(--accent);
   color: #fff;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 1200;
+  min-width: 150px;
+  padding: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-sidebar);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.38);
+}
+
+.context-menu[hidden] {
+  display: none;
+}
+
+.context-menu button {
+  width: 100%;
+  min-height: 30px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.context-menu button:hover {
+  background: var(--bg-hover);
+}
+
+.context-menu button.danger {
+  color: var(--danger);
+}
+
+.context-menu button:disabled {
+  color: var(--text-secondary);
+  cursor: default;
+  opacity: 0.45;
 }
 
 /* ── 添加按钮 ── */

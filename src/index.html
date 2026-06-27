@@ -27,6 +27,12 @@
         <!-- 模型项由 renderer.js 动态渲染 -->
       </nav>
 
+      <div class="context-menu" id="modelContextMenu" hidden>
+        <button type="button" data-action="edit">编辑模型</button>
+        <button type="button" data-action="close">结束并释放内存</button>
+        <button type="button" data-action="delete" class="danger">删除模型</button>
+      </div>
+
       <div class="sidebar-footer">
         <div class="split-panel" id="splitPanel">
           <button class="btn-tool" id="btnToggleSplit" type="button">
@@ -168,6 +174,10 @@
         <label class="form-row">
           <span class="form-label">图标 (可选)</span>
           <input type="text" id="inputIcon" name="icon" placeholder="🤖" maxlength="4" />
+        </label>
+        <label class="form-row">
+          <span class="form-label">图标地址 (可选)</span>
+          <input type="url" id="inputIconUrl" name="iconUrl" placeholder="自动使用网站 favicon" />
         </label>
         <label class="form-row">
           <span class="form-label">主题色 (可选)</span>
