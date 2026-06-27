@@ -191,6 +191,16 @@
         </fieldset>
         <fieldset class="settings-group">
           <legend>代理</legend>
+          <div class="data-cleanup-row" aria-label="数据清理">
+            <button type="button" class="cleanup-button" id="btnClearCache">
+              <strong>清除缓存</strong>
+              <small>保留各模型登录状态</small>
+            </button>
+            <button type="button" class="cleanup-button danger" id="btnClearLoginState">
+              <strong>清除登录状态</strong>
+              <small>所有模型需要重新登录</small>
+            </button>
+          </div>
           <label class="radio-row">
             <input type="radio" name="proxyMode" value="system" />
             <span>

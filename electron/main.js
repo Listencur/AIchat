@@ -72,6 +72,16 @@ const PROXY_URL_PATTERN = /^(https?|socks5?):\/\/.+/;
 const SNAPSHOT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 30;
 const QUICK_HISTORY_LIMIT = 10;
 const QUICK_MODEL_LIMIT = 3;
+const CACHE_STORAGE_TYPES = ['cachestorage'];
+const LOGIN_STORAGE_TYPES = [
+  'cookies',
+  'filesystem',
+  'indexdb',
+  'localstorage',
+  'serviceworkers',
+  'cachestorage',
+  'websql',
+];
 const MODIFIER_LABELS = new Map([
   ['CTRL', 'Ctrl'],
   ['CONTROL', 'Ctrl'],
@@ -515,6 +525,129 @@ async function applyProxySettings(settings) {
   }
 
   return normalized;
+}
+
+function getPersistPartitionName(model) {
+  const partition = typeof model.partition === 'string' && model.partition.trim()
+    ? model.partition.trim()
+    : `persist:${model.id}`;
+
+  if (!partition.startsWith('persist:')) {
+    return '';
+  }
+
+  return partition.slice('persist:'.length).trim();
+}
+
+function getKnownPersistPartitionNames() {
+  const names = new Set();
+
+  for (const model of loadModels()) {
+    const name = getPersistPartitionName(model);
+    if (name) {
+      names.add(name);
+    }
+  }
+
+  const partitionsDir = path.join(app.getPath('userData'), 'Partitions');
+  if (fs.existsSync(partitionsDir)) {
+    for (const entry of fs.readdirSync(partitionsDir, { withFileTypes: true })) {
+      if (entry.isDirectory() && entry.name) {
+        names.add(entry.name);
+      }
+    }
+  }
+
+  return Array.from(names);
+}
+
+function getManagedSessions() {
+  const sessions = new Map([
+    ['default', session.defaultSession],
+  ]);
+
+  for (const name of getKnownPersistPartitionNames()) {
+    sessions.set(`persist:${name}`, session.fromPartition(`persist:${name}`));
+  }
+
+  return Array.from(sessions, ([partition, ses]) => ({ partition, ses }));
+}
+
+async function clearSessionCacheData(ses) {
+  await ses.clearCache();
+  await ses.clearStorageData({ storages: CACHE_STORAGE_TYPES });
+}
+
+async function clearSessionLoginData(ses) {
+  await ses.clearCache();
+  await ses.clearStorageData({ storages: LOGIN_STORAGE_TYPES });
+
+  if (typeof ses.clearAuthCache === 'function') {
+    await ses.clearAuthCache();
+  }
+
+  if (ses.cookies && typeof ses.cookies.flushStore === 'function') {
+    await ses.cookies.flushStore();
+  }
+}
+
+function clearTempDiskCache() {
+  const tempDir = app.getPath('temp');
+  const resolvedCachePath = path.resolve(diskCachePath);
+  const resolvedTempDir = path.resolve(tempDir);
+
+  if (!resolvedCachePath.startsWith(resolvedTempDir) || path.basename(resolvedCachePath) !== 'ai-chat-hub-cache') {
+    return false;
+  }
+
+  try {
+    fs.rmSync(resolvedCachePath, { recursive: true, force: true });
+    return true;
+  } catch (error) {
+    console.warn('[main] clear temp disk cache failed:', error.message);
+    return false;
+  }
+}
+
+async function clearAppCacheData() {
+  const sessions = getManagedSessions();
+
+  for (const item of sessions) {
+    await clearSessionCacheData(item.ses);
+  }
+
+  return {
+    ok: true,
+    sessions: sessions.length,
+    diskCacheCleared: clearTempDiskCache(),
+  };
+}
+
+async function clearAppLoginState() {
+  const sessions = getManagedSessions();
+
+  let state = null;
+  if (viewManager) {
+    state = viewManager.destroyAll();
+  }
+
+  for (const item of sessions) {
+    await clearSessionLoginData(item.ses);
+  }
+
+  const result = {
+    ok: true,
+    sessions: sessions.length,
+    diskCacheCleared: clearTempDiskCache(),
+    state: state || (viewManager ? viewManager.getState() : null),
+  };
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('view:splitChanged', { enabled: false, ids: [], direction: 'horizontal' });
+    mainWindow.webContents.send('view:closed', { id: null, state: result.state });
+  }
+
+  return result;
 }
 
 function readDefaultModelsData() {
@@ -1410,6 +1543,14 @@ function registerIPC() {
       quickWindow.webContents.send('settings:updated', savedSettings);
     }
     return { ...savedSettings, shortcutStatus };
+  });
+
+  ipcMain.handle('settings:clearCache', () => {
+    return clearAppCacheData();
+  });
+
+  ipcMain.handle('settings:clearLoginState', () => {
+    return clearAppLoginState();
   });
 
   // 会话快照读取

@@ -128,6 +128,12 @@ contextBridge.exposeInMainWorld('api', {
 
     /** 保存应用设置 */
     set: (settings) => ipcRenderer.invoke('settings:set', settings),
+
+    /** 清除页面缓存，保留登录状态 */
+    clearCache: () => ipcRenderer.invoke('settings:clearCache'),
+
+    /** 清除所有模型登录状态 */
+    clearLoginState: () => ipcRenderer.invoke('settings:clearLoginState'),
   },
 
   // ── 迷你窗口 ──

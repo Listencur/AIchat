@@ -16,6 +16,8 @@
   const restoreSnapshotInput = document.getElementById('inputRestoreSnapshot');
   const shortcutEnabledInput = document.getElementById('inputShortcutEnabled');
   const shortcutAcceleratorInput = document.getElementById('inputShortcutAccelerator');
+  const clearCacheBtn = document.getElementById('btnClearCache');
+  const clearLoginStateBtn = document.getElementById('btnClearLoginState');
   let currentSettings = null;
 
   function getSelectedProxyMode() {
@@ -79,6 +81,74 @@
     shortcutAcceleratorInput.value = parts.join('+');
   }
 
+  function getButtonHint(button) {
+    return button ? button.querySelector('small') : null;
+  }
+
+  function setCleanupButtonsDisabled(disabled) {
+    clearCacheBtn.disabled = disabled;
+    clearLoginStateBtn.disabled = disabled;
+  }
+
+  function setCleanupHint(button, text, restoreDelay = 0) {
+    const hint = getButtonHint(button);
+    if (!hint) return;
+
+    if (!hint.dataset.defaultText) {
+      hint.dataset.defaultText = hint.textContent;
+    }
+
+    hint.textContent = text;
+
+    if (restoreDelay > 0) {
+      window.setTimeout(() => {
+        hint.textContent = hint.dataset.defaultText;
+      }, restoreDelay);
+    }
+  }
+
+  async function runCleanupAction(button, runningText, action, doneTextFactory) {
+    setCleanupButtonsDisabled(true);
+    setCleanupHint(button, runningText);
+
+    try {
+      const result = await action();
+      const doneText = typeof doneTextFactory === 'function'
+        ? doneTextFactory(result)
+        : '已完成';
+      setCleanupHint(button, doneText, 3200);
+      return result;
+    } catch (error) {
+      console.error('[settings] cleanup failed:', error);
+      setCleanupHint(button, '操作失败', 3200);
+      window.alert('清理失败，请稍后重试。');
+      return null;
+    } finally {
+      setCleanupButtonsDisabled(false);
+    }
+  }
+
+  async function handleClearCache() {
+    await runCleanupAction(
+      clearCacheBtn,
+      '正在清理',
+      () => window.api.settings.clearCache(),
+      (result) => `已清理 ${result && result.sessions ? result.sessions : 0} 个会话`
+    );
+  }
+
+  async function handleClearLoginState() {
+    const confirmed = window.confirm('清除登录状态会退出所有 AI 模型账号，之后需要重新登录。确定继续吗？');
+    if (!confirmed) return;
+
+    await runCleanupAction(
+      clearLoginStateBtn,
+      '正在清除',
+      () => window.api.settings.clearLoginState(),
+      (result) => `已清除 ${result && result.sessions ? result.sessions : 0} 个会话`
+    );
+  }
+
   async function openModal() {
     await window.api.view.setVisible(false);
     await loadSettingsIntoForm();
@@ -123,6 +193,8 @@
   closeBtn.addEventListener('click', closeModal);
   cancelBtn.addEventListener('click', closeModal);
   form.addEventListener('submit', handleSubmit);
+  clearCacheBtn.addEventListener('click', handleClearCache);
+  clearLoginStateBtn.addEventListener('click', handleClearLoginState);
 
   form.querySelectorAll('input[name="proxyMode"]').forEach((input) => {
     input.addEventListener('change', updateProxyUrlState);

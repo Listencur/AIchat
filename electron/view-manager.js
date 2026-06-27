@@ -1081,6 +1081,11 @@ class ViewManager {
     }
     this.views.clear();
     this.activeId = null;
+    this.splitMode = false;
+    this.splitIds = [];
+    this.splitRatios = [];
+    this.splitDirection = 'horizontal';
+    return this.getState();
   }
 }
 

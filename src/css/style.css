@@ -1157,6 +1157,62 @@ body.sidebar-collapsed .model-status-dot {
   color: var(--text-secondary);
 }
 
+.data-cleanup-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cleanup-button {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, opacity 0.16s ease;
+}
+
+.cleanup-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.cleanup-button:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.cleanup-button strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.cleanup-button small {
+  min-height: 16px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.cleanup-button.danger {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--border-color));
+}
+
+.cleanup-button.danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.cleanup-button.danger strong {
+  color: color-mix(in srgb, var(--danger) 84%, var(--text-primary));
+}
+
 .proxy-url-row {
   padding-left: 26px;
 }
