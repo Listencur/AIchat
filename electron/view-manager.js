@@ -6,8 +6,9 @@ const { WebContentsView } = require('electron');
 const SIDEBAR_WIDTH = 240;
 const SPLIT_GUTTER_WIDTH = 10;
 const DEBUG = process.argv.includes('--dev');
+const PROMPT_SUBMIT_TIMEOUT_MS = 12000;
 const CONVERSATION_EXTRACT_SCRIPT = `
-(() => {
+(async () => {
   const normalize = (text) => String(text || '')
     .replace(/\\r/g, '')
     .replace(/[\\t\\f\\v]+/g, ' ')
@@ -99,6 +100,112 @@ const CONVERSATION_EXTRACT_SCRIPT = `
   return { title, url, messages: [], text };
 })();
 `;
+
+function buildPromptSubmitScript(prompt) {
+  const serializedPrompt = JSON.stringify(prompt);
+
+  return `
+(() => {
+  const prompt = ${serializedPrompt};
+  const normalize = (value) => String(value || '').toLowerCase();
+  const isVisible = (element) => {
+    if (!element) return false;
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    return rect.width > 8 && rect.height > 8 && style.visibility !== 'hidden' && style.display !== 'none';
+  };
+  const selectors = [
+    'textarea:not([disabled])',
+    'div#prompt-textarea[contenteditable="true"]',
+    '[data-testid="prompt-textarea"]',
+    'rich-textarea [contenteditable="true"]',
+    '[contenteditable="true"][role="textbox"]',
+    '[contenteditable="true"]',
+    '[role="textbox"]'
+  ];
+  const inputs = selectors
+    .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+    .filter((element, index, list) => list.indexOf(element) === index)
+    .filter(isVisible);
+  const input = inputs.find((element) => {
+    const label = normalize([
+      element.id,
+      element.className,
+      element.getAttribute('aria-label'),
+      element.getAttribute('placeholder'),
+      element.getAttribute('data-testid')
+    ].join(' '));
+    return label.includes('prompt') || label.includes('message') || label.includes('输入') || label.includes('提问') || label.includes('ask') || label.includes('query');
+  }) || inputs[0];
+
+  if (!input) {
+    return { ok: false, reason: 'input-not-found' };
+  }
+
+  input.focus();
+  if ('value' in input) {
+    input.value = prompt;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  } else {
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(input);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.execCommand('insertText', false, prompt);
+    input.dispatchEvent(new InputEvent('input', {
+      bubbles: true,
+      inputType: 'insertText',
+      data: prompt,
+    }));
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 250));
+
+  const sendSelectors = [
+    '[data-testid="send-button"]',
+    '[aria-label*="Send" i]',
+    '[aria-label*="发送" i]',
+    '[aria-label*="submit" i]',
+    'button[type="submit"]',
+    'button.send-button'
+  ];
+  const buttons = sendSelectors
+    .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+    .filter((button, index, list) => list.indexOf(button) === index)
+    .filter((button) => isVisible(button) && !button.disabled && button.getAttribute('aria-disabled') !== 'true');
+  const sendButton = buttons.find((button) => {
+    const label = normalize([
+      button.textContent,
+      button.getAttribute('aria-label'),
+      button.getAttribute('data-testid'),
+      button.className
+    ].join(' '));
+    return label.includes('send') || label.includes('发送') || label.includes('submit') || label.includes('arrow') || label.includes('提交');
+  }) || buttons[0];
+
+  if (sendButton) {
+    sendButton.click();
+    return { ok: true, method: 'button' };
+  }
+
+  input.dispatchEvent(new KeyboardEvent('keydown', {
+    key: 'Enter',
+    code: 'Enter',
+    bubbles: true,
+    cancelable: true,
+  }));
+  input.dispatchEvent(new KeyboardEvent('keyup', {
+    key: 'Enter',
+    code: 'Enter',
+    bubbles: true,
+    cancelable: true,
+  }));
+  return { ok: true, method: 'enter' };
+})();
+`;
+}
 
 function debugLog(...args) {
   if (DEBUG) {
@@ -292,6 +399,64 @@ class ViewManager {
     this.updateBounds(modelId);
 
     this.activeId = modelId;
+  }
+
+  waitForWebContentsReady(webContents, timeoutMs = PROMPT_SUBMIT_TIMEOUT_MS) {
+    if (!webContents || webContents.isDestroyed() || !webContents.isLoading()) {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const cleanup = () => {
+        webContents.removeListener('did-stop-loading', done);
+        webContents.removeListener('did-finish-load', done);
+        webContents.removeListener('did-fail-load', done);
+        clearTimeout(timer);
+      };
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve();
+      };
+      const timer = setTimeout(done, timeoutMs);
+
+      webContents.once('did-stop-loading', done);
+      webContents.once('did-finish-load', done);
+      webContents.once('did-fail-load', done);
+    });
+  }
+
+  /**
+   * 向指定模型页面填入 Prompt 并发送。只操作当前模型网页，不触碰 session 数据。
+   */
+  async submitPrompt(modelId, model, prompt) {
+    const targetModel = model || (this.views.has(modelId) ? this.views.get(modelId).model : null);
+    if (!targetModel || typeof prompt !== 'string' || !prompt.trim()) {
+      return { ok: false, reason: 'invalid-prompt' };
+    }
+
+    await this.switchTo(modelId, targetModel);
+
+    const entry = this.views.get(modelId);
+    if (!entry || entry.view.webContents.isDestroyed()) {
+      return { ok: false, reason: 'view-not-loaded' };
+    }
+
+    const { webContents } = entry.view;
+    await this.waitForWebContentsReady(webContents);
+
+    try {
+      return await webContents.executeJavaScript(buildPromptSubmitScript(prompt.trim()), false);
+    } catch (error) {
+      debugError(`[${entry.model.name}] prompt submit failed`, error);
+      return {
+        ok: false,
+        reason: 'submit-failed',
+        message: error && error.message ? error.message : String(error),
+      };
+    }
   }
 
   /**

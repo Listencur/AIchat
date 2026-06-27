@@ -131,6 +131,9 @@ contextBridge.exposeInMainWorld('api', {
     /** 保存快速输入状态 */
     stateSet: (patch) => ipcRenderer.invoke('quick:stateSet', patch),
 
+    /** 设置快速窗口置顶 */
+    setPinned: (pinned) => ipcRenderer.invoke('quick:setPinned', pinned),
+
     /** 隐藏迷你窗口 */
     hide: () => ipcRenderer.invoke('quick:hide'),
 

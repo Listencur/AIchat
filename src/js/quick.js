@@ -5,7 +5,9 @@
   const modelSelect = document.getElementById('quickModelSelect');
   const promptInput = document.getElementById('quickPrompt');
   const submitBtn = document.getElementById('btnQuickSubmit');
+  const pinBtn = document.getElementById('btnQuickPin');
   let saveTimer = null;
+  let pinned = false;
 
   async function loadModels(preferredId = '') {
     const data = await window.api.models.list();
@@ -34,6 +36,8 @@
     const state = await window.api.quick.stateGet();
     await loadModels(state.lastModelId);
     promptInput.value = state.draft || '';
+    pinned = state.pinned === true;
+    renderPinned();
   }
 
   function buildStatePatch() {
@@ -41,6 +45,7 @@
       draft: promptInput.value,
       lastModelId: modelSelect.value,
       submitMode: 'open',
+      pinned,
     };
   }
 
@@ -77,10 +82,22 @@
       draft: '',
       lastModelId: modelSelect.value,
       submitMode: 'open',
+      pinned,
     });
     window.api.quick.hide();
     await window.api.quick.submit(payload);
     submitBtn.disabled = false;
+  }
+
+  function renderPinned() {
+    pinBtn.classList.toggle('is-pinned', pinned);
+    pinBtn.title = pinned ? '已置顶，失焦不隐藏' : '置顶，失焦不隐藏';
+  }
+
+  async function togglePinned() {
+    pinned = !pinned;
+    renderPinned();
+    await window.api.quick.setPinned(pinned);
   }
 
   async function focusPrompt() {
@@ -95,6 +112,7 @@
 
   document.addEventListener('DOMContentLoaded', focusPrompt);
   form.addEventListener('submit', submitQuick);
+  pinBtn.addEventListener('click', togglePinned);
   modelSelect.addEventListener('change', scheduleSaveState);
   promptInput.addEventListener('input', scheduleSaveState);
 

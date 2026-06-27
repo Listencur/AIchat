@@ -12,9 +12,12 @@
       <textarea id="quickPrompt" rows="3" placeholder="Enter 提交，Shift+Enter 换行"></textarea>
       <footer class="quick-toolbar">
         <select id="quickModelSelect" aria-label="模型"></select>
-        <button class="quick-send" id="btnQuickSubmit" type="submit" aria-label="发送">
-          <span>↑</span>
-        </button>
+        <div class="quick-actions">
+          <button class="quick-pin" id="btnQuickPin" type="button" aria-label="置顶">⌖</button>
+          <button class="quick-send" id="btnQuickSubmit" type="submit" aria-label="发送">
+            <span>↑</span>
+          </button>
+        </div>
       </footer>
     </form>
   </main>

@@ -61,6 +61,7 @@ const DEFAULT_QUICK_STATE = {
   draft: '',
   lastModelId: '',
   submitMode: 'open',
+  pinned: false,
   history: [],
 };
 const PROXY_URL_PATTERN = /^(https?|socks5?):\/\/.+/;
@@ -202,6 +203,7 @@ function normalizeQuickState(state) {
     draft: typeof raw.draft === 'string' ? raw.draft.slice(0, 10000) : '',
     lastModelId: typeof raw.lastModelId === 'string' ? raw.lastModelId : '',
     submitMode: raw.submitMode === 'copy' ? 'copy' : 'open',
+    pinned: raw.pinned === true,
     history: history
       .filter((item) => typeof item === 'string' && item.trim())
       .map((item) => item.trim())
@@ -790,11 +792,13 @@ async function quitApplication() {
 }
 
 function createQuickWindow() {
+  const quickState = loadQuickState();
+
   quickWindow = new BrowserWindow({
-    width: 820,
-    height: 180,
+    width: 700,
+    height: 150,
     minWidth: 560,
-    minHeight: 150,
+    minHeight: 140,
     show: false,
     frame: false,
     transparent: true,
@@ -806,6 +810,7 @@ function createQuickWindow() {
     icon: getAppIcon(),
     backgroundColor: '#00000000',
     autoHideMenuBar: true,
+    alwaysOnTop: quickState.pinned,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -817,7 +822,7 @@ function createQuickWindow() {
   quickWindow.loadFile(path.join(__dirname, '..', 'src', 'quick.html'));
 
   quickWindow.on('blur', () => {
-    if (quickWindow && !quickWindow.webContents.isDevToolsOpened()) {
+    if (quickWindow && !quickWindow.webContents.isDevToolsOpened() && !loadQuickState().pinned) {
       quickWindow.hide();
     }
   });
@@ -845,6 +850,8 @@ function showQuickWindow() {
     createQuickWindow();
   }
 
+  const quickState = loadQuickState();
+  quickWindow.setAlwaysOnTop(quickState.pinned, 'floating');
   quickWindow.center();
   quickWindow.show();
   quickWindow.focus();
@@ -900,9 +907,9 @@ async function submitQuickAction(payload) {
     return { ok: false, mode: 'open' };
   }
 
-  await viewManager.switchTo(model.id, model);
+  const submitResult = await viewManager.submitPrompt(model.id, model, prompt);
   mainWindow.webContents.send('view:switched', { id: model.id });
-  return { ok: true, mode: 'open', modelId: model.id };
+  return { ok: submitResult.ok, mode: 'open', modelId: model.id, submitResult };
 }
 
 // ── IPC 处理器 ──
@@ -1260,7 +1267,19 @@ function registerIPC() {
   });
 
   ipcMain.handle('quick:stateSet', (_event, patch) => {
-    return updateQuickState(patch);
+    const state = updateQuickState(patch);
+    if (quickWindow && typeof patch === 'object' && patch && Object.hasOwn(patch, 'pinned')) {
+      quickWindow.setAlwaysOnTop(state.pinned, 'floating');
+    }
+    return state;
+  });
+
+  ipcMain.handle('quick:setPinned', (_event, pinned) => {
+    const state = updateQuickState({ pinned: pinned === true });
+    if (quickWindow) {
+      quickWindow.setAlwaysOnTop(state.pinned, 'floating');
+    }
+    return state;
   });
 
   ipcMain.handle('quick:hide', () => {
