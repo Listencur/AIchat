@@ -1018,6 +1018,7 @@ class ViewManager {
           name: model.name,
           icon: model.icon || '🤖',
           iconUrl: model.iconUrl || '',
+          iconUrls: Array.isArray(model.iconUrls) ? model.iconUrls : [],
           color: model.color || '#666666',
           loaded: Boolean(webContents),
           active: model.id === this.activeId,

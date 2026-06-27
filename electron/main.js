@@ -316,17 +316,58 @@ function isRestorableUrl(url) {
   }
 }
 
-function buildFaviconUrl(url) {
+function appendUniqueIconUrl(list, iconUrl) {
+  if (typeof iconUrl !== 'string') {
+    return;
+  }
+
+  const value = iconUrl.trim();
+  if (!value || list.includes(value)) {
+    return;
+  }
+
+  list.push(value);
+}
+
+function buildFaviconUrls(url) {
+  const candidates = [];
   if (typeof url !== 'string' || !url) {
-    return '';
+    return candidates;
   }
 
   try {
     const parsed = new URL(url);
-    return `${parsed.origin}/favicon.ico`;
+    appendUniqueIconUrl(candidates, `${parsed.origin}/favicon.ico`);
+    appendUniqueIconUrl(candidates, `${parsed.origin}/favicon.svg`);
+    appendUniqueIconUrl(candidates, `${parsed.origin}/apple-touch-icon.png`);
+    appendUniqueIconUrl(candidates, `${parsed.origin}/apple-touch-icon-precomposed.png`);
+    appendUniqueIconUrl(candidates, `${parsed.origin}/favicon-32x32.png`);
+    appendUniqueIconUrl(candidates, `${parsed.origin}/favicon-16x16.png`);
+    appendUniqueIconUrl(candidates, `https://www.google.com/s2/favicons?domain=${encodeURIComponent(parsed.hostname)}&sz=64`);
+    appendUniqueIconUrl(candidates, `https://icons.duckduckgo.com/ip3/${parsed.hostname}.ico`);
   } catch {
-    return '';
+    return candidates;
   }
+
+  return candidates;
+}
+
+function normalizeIconUrls(value) {
+  const urls = [];
+  const rawUrls = Array.isArray(value) ? value : [];
+
+  rawUrls.forEach((item) => appendUniqueIconUrl(urls, item));
+  return urls;
+}
+
+function buildModelIconUrls(url, preferredUrl = '', existingUrls = []) {
+  const urls = [];
+
+  appendUniqueIconUrl(urls, preferredUrl);
+  normalizeIconUrls(existingUrls).forEach((item) => appendUniqueIconUrl(urls, item));
+  buildFaviconUrls(url).forEach((item) => appendUniqueIconUrl(urls, item));
+
+  return urls;
 }
 
 function isSupportedIconPath(filePath) {
@@ -355,28 +396,29 @@ function copyLocalModelIcon(modelId, sourcePath) {
   return pathToFileURL(targetPath).href;
 }
 
-function resolveModelIconUrl(rawConfig, modelId, url) {
+function resolveModelIconUrls(rawConfig, modelId, url) {
   if (rawConfig.localIconPath) {
     const copiedUrl = copyLocalModelIcon(modelId, rawConfig.localIconPath);
     if (copiedUrl) {
-      return copiedUrl;
+      return [copiedUrl];
     }
   }
 
   if (typeof rawConfig.iconUrl === 'string' && rawConfig.iconUrl.trim()) {
-    return rawConfig.iconUrl.trim();
+    return buildModelIconUrls(url, rawConfig.iconUrl.trim(), rawConfig.iconUrls);
   }
 
-  return buildFaviconUrl(url);
+  return buildModelIconUrls(url, '', rawConfig.iconUrls);
 }
 
 function normalizeModelIcon(model) {
+  const iconUrls = buildModelIconUrls(model.url, model.iconUrl, model.iconUrls);
+
   return {
     ...model,
     icon: model.icon || '🤖',
-    iconUrl: typeof model.iconUrl === 'string' && model.iconUrl
-      ? model.iconUrl
-      : buildFaviconUrl(model.url),
+    iconUrl: iconUrls[0] || '',
+    iconUrls,
   };
 }
 
@@ -1027,12 +1069,14 @@ function registerIPC() {
     const models = loadModels();
     const rawConfig = config && typeof config === 'object' ? config : {};
     const id = generateModelId(rawConfig.name);
+    const iconUrls = resolveModelIconUrls(rawConfig, id, rawConfig.url);
     const newModel = {
       id,
       name: rawConfig.name,
       url: rawConfig.url,
       icon: rawConfig.icon || '🤖',
-      iconUrl: resolveModelIconUrl(rawConfig, id, rawConfig.url),
+      iconUrl: iconUrls[0] || '',
+      iconUrls,
       color: rawConfig.color || '#666666',
       partition: `persist:${rawConfig.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
     };
@@ -1060,12 +1104,14 @@ function registerIPC() {
       return null;
     }
 
+    const iconUrls = resolveModelIconUrls(rawConfig, id, url);
     const updatedModel = {
       ...models[index],
       name,
       url,
       icon: typeof rawConfig.icon === 'string' && rawConfig.icon.trim() ? rawConfig.icon.trim() : '🤖',
-      iconUrl: resolveModelIconUrl(rawConfig, id, url),
+      iconUrl: iconUrls[0] || '',
+      iconUrls,
       color: typeof rawConfig.color === 'string' && rawConfig.color ? rawConfig.color : '#666666',
     };
 

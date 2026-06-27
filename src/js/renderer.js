@@ -141,15 +141,27 @@
   function createModelIcon(model) {
     const wrapper = document.createElement('span');
     wrapper.className = 'model-icon';
+    const iconUrls = Array.isArray(model.iconUrls) ? model.iconUrls : [];
+    const candidates = [model.iconUrl, ...iconUrls]
+      .filter((url) => typeof url === 'string' && url.trim())
+      .map((url) => url.trim())
+      .filter((url, index, list) => list.indexOf(url) === index);
 
-    if (model.iconUrl) {
+    if (candidates.length > 0) {
       const image = document.createElement('img');
-      image.src = model.iconUrl;
+      let candidateIndex = 0;
+      image.src = candidates[candidateIndex];
       image.alt = '';
       image.addEventListener('error', () => {
+        candidateIndex += 1;
+        if (candidateIndex < candidates.length) {
+          image.src = candidates[candidateIndex];
+          return;
+        }
+
         wrapper.textContent = model.icon || '🤖';
         wrapper.classList.add('icon-fallback');
-      }, { once: true });
+      });
       wrapper.appendChild(image);
       return wrapper;
     }
