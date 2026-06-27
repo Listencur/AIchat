@@ -4,6 +4,8 @@ const { WebContentsView } = require('electron');
 
 // ⚠️ 此值必须与 src/css/style.css 中 --sidebar-width 保持一致
 const SIDEBAR_WIDTH = 240;
+// ⚠️ 此值必须与 src/css/style.css 中 --sidebar-collapsed-width 保持一致
+const SIDEBAR_COLLAPSED_WIDTH = 56;
 // ⚠️ 此值必须与 src/css/style.css 中 --top-bar-height 保持一致
 const TOP_BAR_HEIGHT = 36;
 const SPLIT_GUTTER_WIDTH = 10;
@@ -316,7 +318,7 @@ class ViewManager {
   }
 
   getSidebarWidth() {
-    return this.sidebarCollapsed ? 0 : SIDEBAR_WIDTH;
+    return this.sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH;
   }
 
   setSidebarCollapsed(collapsed) {

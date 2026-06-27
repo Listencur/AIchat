@@ -5,6 +5,8 @@
 :root {
   /* 侧边栏宽度，⚠️ 必须与 electron/view-manager.js 的 SIDEBAR_WIDTH 一致 */
   --sidebar-width: 240px;
+  /* 折叠侧栏宽度，⚠️ 必须与 electron/view-manager.js 的 SIDEBAR_COLLAPSED_WIDTH 一致 */
+  --sidebar-collapsed-width: 56px;
   /* 顶部窗口栏高度，⚠️ 必须与 electron/view-manager.js 的 TOP_BAR_HEIGHT 一致 */
   --top-bar-height: 36px;
 
@@ -90,10 +92,10 @@ body::after {
 }
 
 body.sidebar-collapsed .window-bar-left {
-  width: 48px;
-  min-width: 48px;
+  width: var(--sidebar-collapsed-width);
+  min-width: var(--sidebar-collapsed-width);
   justify-content: center;
-  padding: 0 8px;
+  padding: 0 10px;
 }
 
 .window-drag-region {
@@ -151,9 +153,16 @@ body.sidebar-collapsed .window-bar-left {
   flex-direction: column;
   border-right: 1px solid var(--border-color);
   height: 100%;
+  transition: width 0.18s ease, min-width 0.18s ease;
 }
 
 body.sidebar-collapsed .sidebar {
+  width: var(--sidebar-collapsed-width);
+  min-width: var(--sidebar-collapsed-width);
+}
+
+body.sidebar-collapsed .group-section,
+body.sidebar-collapsed .sidebar-footer {
   display: none;
 }
 
@@ -327,13 +336,22 @@ body.sidebar-collapsed .header-actions .icon-button:not(.sidebar-toggle) {
 .model-list {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 0;
+  padding: 8px 8px;
+}
+
+body.sidebar-collapsed .model-list {
+  padding: 8px 7px;
 }
 
 /* 滚动条美化 */
 .model-list::-webkit-scrollbar {
   width: 6px;
 }
+
+body.sidebar-collapsed .model-list::-webkit-scrollbar {
+  width: 0;
+}
+
 .model-list::-webkit-scrollbar-track {
   background: transparent;
 }
@@ -345,12 +363,29 @@ body.sidebar-collapsed .header-actions .icon-button:not(.sidebar-toggle) {
 .model-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 20px;
+  gap: 10px;
+  min-height: 42px;
+  margin: 3px 0;
+  padding: 8px 10px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
   position: relative;
-  border-left: 3px solid transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.model-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--model-color, var(--accent));
+  opacity: 0;
+  transform: scaleY(0.55);
+  transition: opacity 0.15s, transform 0.15s;
 }
 
 .model-item.dragging {
@@ -364,33 +399,42 @@ body.sidebar-collapsed .header-actions .icon-button:not(.sidebar-toggle) {
 
 .model-item:hover {
   background: var(--bg-hover);
+  border-color: var(--border-color);
 }
 
 .model-item.active {
   background: var(--bg-active);
-  border-left-color: var(--model-color, var(--accent));
+  border-color: var(--border-color);
+}
+
+.model-item.active::before,
+.model-item.split-selected::before {
+  opacity: 1;
+  transform: scaleY(1);
 }
 
 .model-item .model-icon {
   font-size: 20px;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   text-align: center;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .model-icon img {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 4px;
   object-fit: contain;
 }
 
 .model-icon.icon-fallback {
-  line-height: 28px;
+  line-height: 30px;
 }
 
 .model-item .model-name {
@@ -410,6 +454,34 @@ body.sidebar-collapsed .header-actions .icon-button:not(.sidebar-toggle) {
   flex-shrink: 0;
   background: #777777;
   box-shadow: 0 0 0 3px rgba(119, 119, 119, 0.12);
+}
+
+body.sidebar-collapsed .model-item {
+  width: 42px;
+  min-height: 42px;
+  justify-content: center;
+  gap: 0;
+  margin: 4px 0;
+  padding: 6px;
+}
+
+body.sidebar-collapsed .model-item .model-icon {
+  width: 30px;
+  height: 30px;
+}
+
+body.sidebar-collapsed .model-item .model-name,
+body.sidebar-collapsed .model-item .model-check {
+  display: none;
+}
+
+body.sidebar-collapsed .model-status-dot {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  width: 7px;
+  height: 7px;
+  box-shadow: 0 0 0 2px var(--bg-sidebar);
 }
 
 .model-status-dot.idle {
@@ -480,7 +552,7 @@ body.sidebar-collapsed .header-actions .icon-button:not(.sidebar-toggle) {
 
 .model-item.split-selected {
   background: var(--bg-active);
-  border-left-color: var(--model-color, var(--accent));
+  border-color: var(--border-color);
 }
 
 .model-check {

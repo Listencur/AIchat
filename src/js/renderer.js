@@ -71,10 +71,12 @@
 
     models.forEach((model) => {
       const li = document.createElement('li');
+      const modelStatus = getModelStatus(model.id);
       li.className = 'model-item';
       li.dataset.id = model.id;
       li.draggable = !splitSelecting;
-      li.title = '拖拽排序，右键打开菜单';
+      li.title = `${model.name} · ${modelStatus.label}；拖拽排序，右键打开菜单`;
+      li.setAttribute('aria-label', `${model.name}，${modelStatus.label}`);
       li.style.setProperty('--model-color', model.color);
 
       if (splitSelecting) {
@@ -100,7 +102,7 @@
       name.textContent = model.name;
       li.appendChild(name);
 
-      li.appendChild(createModelStatusDot(model.id));
+      li.appendChild(createModelStatusDot(model.id, modelStatus));
 
       const check = document.createElement('span');
       check.className = 'model-check';
@@ -154,8 +156,7 @@
     return wrapper;
   }
 
-  function createModelStatusDot(modelId) {
-    const status = getModelStatus(modelId);
+  function createModelStatusDot(modelId, status = getModelStatus(modelId)) {
     const dot = document.createElement('span');
     dot.className = `model-status-dot ${status.type}`;
     dot.title = status.label;
