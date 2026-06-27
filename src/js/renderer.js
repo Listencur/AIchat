@@ -33,6 +33,7 @@
   const exportConversationBtn = document.getElementById('btnExportConversation');
   const splitActions = document.getElementById('splitActions');
   const splitHint = document.getElementById('splitHint');
+  const splitRestoreBtn = document.getElementById('btnRestoreSplit');
   const splitExitBtn = document.getElementById('btnExitSplit');
   const mainArea = document.getElementById('mainArea');
   const splitResizers = document.getElementById('splitResizers');
@@ -47,6 +48,8 @@
   let loadingModelIds = new Set();
   let splitSelecting = false;
   let splitRatios = [];
+  let pendingSplitRestore = null;
+  let splitRestoring = false;
   let draggedModelId = null;
   let contextModelId = null;
   let viewEventsRegistered = false;
@@ -632,6 +635,9 @@
    */
   function setSplitSelecting(enabled) {
     splitSelecting = enabled;
+    if (enabled) {
+      clearPendingSplitRestore();
+    }
 
     if (enabled && activeModelId && splitSelection.size === 0) {
       splitSelection.add(activeModelId);
@@ -691,6 +697,7 @@
     splitSelecting = false;
     splitSelection.clear();
     splitRatios = [];
+    clearPendingSplitRestore();
     await window.api.view.exitSplit();
     clearSplitResizers();
     updateSplitControls();
@@ -702,8 +709,21 @@
    * 更新分屏控制区域状态。
    */
   function updateSplitControls() {
+    const hasPendingRestore = hasPendingSplitRestore();
     splitToggleBtn.classList.toggle('active', splitSelecting);
-    splitActions.hidden = !splitSelecting;
+    splitActions.hidden = !splitSelecting && !hasPendingRestore && !splitRestoring;
+    splitRestoreBtn.hidden = !hasPendingRestore || splitSelecting || splitRestoring;
+    splitExitBtn.hidden = !splitSelecting || splitRestoring;
+
+    if (splitRestoring) {
+      splitHint.textContent = '正在恢复分屏';
+      return;
+    }
+
+    if (!splitSelecting && hasPendingRestore) {
+      splitHint.textContent = `上次分屏 ${pendingSplitRestore.ids.length} 个模型`;
+      return;
+    }
 
     const count = splitSelection.size;
     if (!splitSelecting) {
@@ -713,6 +733,53 @@
     } else {
       splitHint.textContent = `已选择 ${count} 个`;
     }
+  }
+
+  function hasPendingSplitRestore() {
+    return Boolean(pendingSplitRestore && Array.isArray(pendingSplitRestore.ids) && pendingSplitRestore.ids.length >= 2);
+  }
+
+  function clearPendingSplitRestore() {
+    pendingSplitRestore = null;
+    splitRestoring = false;
+  }
+
+  async function restorePendingSplit() {
+    if (!hasPendingSplitRestore() || splitRestoring) return;
+
+    const modelIds = new Set(modelsCache.map((model) => model.id));
+    const ids = pendingSplitRestore.ids.filter((id) => modelIds.has(id)).slice(0, 3);
+    if (ids.length < 2) {
+      clearPendingSplitRestore();
+      updateSplitControls();
+      return;
+    }
+
+    splitRestoring = true;
+    splitSelecting = true;
+    splitSelection.clear();
+    ids.forEach((id) => splitSelection.add(id));
+    splitRatios = normalizeRatios(pendingSplitRestore.ratios, ids.length);
+    updateSplitControls();
+    renderModels(getVisibleModels());
+
+    const ok = await window.api.view.enterSplit(ids);
+    if (ok) {
+      await window.api.view.setSplitRatios(splitRatios);
+      ids.forEach((id) => loadedModelIds.add(id));
+      clearPendingSplitRestore();
+      splitSelecting = true;
+      updateActive(ids[0]);
+      renderModels(getVisibleModels());
+      renderSplitResizers();
+      updateSplitControls();
+      return;
+    }
+
+    splitSelecting = false;
+    splitRestoring = false;
+    updateSplitControls();
+    renderModels(getVisibleModels());
   }
 
   /**
@@ -843,26 +910,18 @@
       : [];
 
     if (snapshot.splitMode && splitIds.length >= 2) {
-      splitSelecting = true;
-      splitSelection.clear();
-      splitIds.forEach((id) => splitSelection.add(id));
-      splitRatios = normalizeRatios(snapshot.splitRatios, splitIds.length);
+      pendingSplitRestore = {
+        ids: splitIds,
+        ratios: normalizeRatios(snapshot.splitRatios, splitIds.length),
+      };
       updateSplitControls();
       renderModels(getVisibleModels());
 
-      const ok = await window.api.view.enterSplit(splitIds);
-      if (ok) {
-        await window.api.view.setSplitRatios(splitRatios);
-        splitIds.forEach((id) => loadedModelIds.add(id));
-        updateActive(splitIds[0]);
-        renderModels(getVisibleModels());
-        renderSplitResizers();
-        return true;
-      }
-
-      splitSelecting = false;
-      splitSelection.clear();
-      splitRatios = [];
+      const activeId = snapshot.activeModelId && modelIds.has(snapshot.activeModelId)
+        ? snapshot.activeModelId
+        : splitIds[0];
+      switchModel(activeId);
+      return true;
     }
 
     if (snapshot.activeModelId && modelIds.has(snapshot.activeModelId)) {
@@ -1023,6 +1082,12 @@
       const modelIds = new Set(list.map((model) => model.id));
       loadedModelIds = new Set(Array.from(loadedModelIds).filter((id) => modelIds.has(id)));
       loadingModelIds = new Set(Array.from(loadingModelIds).filter((id) => modelIds.has(id)));
+      if (hasPendingSplitRestore()) {
+        pendingSplitRestore.ids = pendingSplitRestore.ids.filter((id) => modelIds.has(id));
+        if (pendingSplitRestore.ids.length < 2) {
+          clearPendingSplitRestore();
+        }
+      }
       for (const id of Array.from(splitSelection)) {
         if (!modelIds.has(id)) {
           splitSelection.delete(id);
@@ -1068,6 +1133,7 @@
     });
 
     splitExitBtn.addEventListener('click', exitSplitMode);
+    splitRestoreBtn.addEventListener('click', restorePendingSplit);
     exportConversationBtn.addEventListener('click', exportConversation);
     themeBtn.addEventListener('click', toggleTheme);
     windowMinimizeBtn.addEventListener('click', () => window.api.windowControls.minimize());
