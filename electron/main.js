@@ -15,7 +15,7 @@ const {
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
-const { ViewManager, SIDEBAR_WIDTH } = require('./view-manager');
+const { ViewManager } = require('./view-manager');
 
 /** @type {BrowserWindow} */
 let mainWindow = null;
@@ -674,13 +674,8 @@ function createWindow() {
     icon: getAppIcon(),
     backgroundColor: settings.theme === 'light' ? '#eeeeee' : '#202020',
     title: '',
+    frame: false,
     autoHideMenuBar: true,
-    titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: settings.theme === 'light' ? '#eeeeee' : '#202020',
-      symbolColor: settings.theme === 'light' ? '#1f1f1f' : '#f4f4f4',
-      height: 30,
-    },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1281,13 +1276,6 @@ function registerIPC() {
     await applyProxySettings(savedSettings);
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setBackgroundColor(savedSettings.theme === 'light' ? '#eeeeee' : '#202020');
-      if (typeof mainWindow.setTitleBarOverlay === 'function') {
-        mainWindow.setTitleBarOverlay({
-          color: savedSettings.theme === 'light' ? '#eeeeee' : '#202020',
-          symbolColor: savedSettings.theme === 'light' ? '#1f1f1f' : '#f4f4f4',
-          height: 30,
-        });
-      }
     }
     const shortcutStatus = registerGlobalShortcut(savedSettings);
     if (quickWindow) {
@@ -1328,6 +1316,34 @@ function registerIPC() {
   ipcMain.handle('quick:hide', () => {
     if (quickWindow) {
       quickWindow.hide();
+    }
+    return true;
+  });
+
+  ipcMain.handle('window:minimize', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.minimize();
+    }
+    return true;
+  });
+
+  ipcMain.handle('window:toggleMaximize', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return false;
+    }
+
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+      return false;
+    }
+
+    mainWindow.maximize();
+    return true;
+  });
+
+  ipcMain.handle('window:close', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.close();
     }
     return true;
   });

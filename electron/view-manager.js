@@ -4,6 +4,8 @@ const { WebContentsView } = require('electron');
 
 // ⚠️ 此值必须与 src/css/style.css 中 --sidebar-width 保持一致
 const SIDEBAR_WIDTH = 240;
+// ⚠️ 此值必须与 src/css/style.css 中 --top-bar-height 保持一致
+const TOP_BAR_HEIGHT = 36;
 const SPLIT_GUTTER_WIDTH = 10;
 const DEBUG = process.argv.includes('--dev');
 const PROMPT_SUBMIT_TIMEOUT_MS = 12000;
@@ -519,11 +521,12 @@ class ViewManager {
     if (!entry) return;
 
     const [width, height] = this.win.getContentSize();
+    const contentHeight = Math.max(0, height - TOP_BAR_HEIGHT);
     entry.view.setBounds({
       x: SIDEBAR_WIDTH,
-      y: 0,
+      y: TOP_BAR_HEIGHT,
       width: Math.max(0, width - SIDEBAR_WIDTH),
-      height: height,
+      height: contentHeight,
     });
   }
 
@@ -548,6 +551,7 @@ class ViewManager {
     if (!this.splitMode || this.splitIds.length === 0) return;
 
     const [width, height] = this.win.getContentSize();
+    const contentHeight = Math.max(0, height - TOP_BAR_HEIGHT);
     const availableWidth = Math.max(0, width - SIDEBAR_WIDTH);
     const gutterTotal = SPLIT_GUTTER_WIDTH * (this.splitIds.length - 1);
     const contentWidth = Math.max(0, availableWidth - gutterTotal);
@@ -565,9 +569,9 @@ class ViewManager {
 
       entry.view.setBounds({
         x,
-        y: 0,
+        y: TOP_BAR_HEIGHT,
         width: Math.max(0, columnWidth),
-        height,
+        height: contentHeight,
       });
 
       x += columnWidth + SPLIT_GUTTER_WIDTH;
@@ -886,4 +890,4 @@ class ViewManager {
   }
 }
 
-module.exports = { ViewManager, SIDEBAR_WIDTH };
+module.exports = { ViewManager, SIDEBAR_WIDTH, TOP_BAR_HEIGHT };

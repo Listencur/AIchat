@@ -150,4 +150,16 @@ contextBridge.exposeInMainWorld('api', {
     /** 获取上次保存的会话快照 */
     get: () => ipcRenderer.invoke('snapshot:get'),
   },
+
+  // ── 主窗口控制 ──
+  windowControls: {
+    /** 最小化主窗口 */
+    minimize: () => ipcRenderer.invoke('window:minimize'),
+
+    /** 最大化/还原主窗口 */
+    toggleMaximize: () => ipcRenderer.invoke('window:toggleMaximize'),
+
+    /** 关闭主窗口，沿用关闭提示/托盘逻辑 */
+    close: () => ipcRenderer.invoke('window:close'),
+  },
 });

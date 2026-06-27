@@ -5,6 +5,8 @@
 :root {
   /* 侧边栏宽度，⚠️ 必须与 electron/view-manager.js 的 SIDEBAR_WIDTH 一致 */
   --sidebar-width: 240px;
+  /* 顶部窗口栏高度，⚠️ 必须与 electron/view-manager.js 的 TOP_BAR_HEIGHT 一致 */
+  --top-bar-height: 36px;
 
   /* 配色 */
   --bg-app: #202020;
@@ -53,10 +55,80 @@ body {
   height: 100vh;
 }
 
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  pointer-events: none;
+  border: 1px solid var(--border-color);
+}
+
+/* ── 自绘窗口栏 ── */
+.window-bar {
+  height: var(--top-bar-height);
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-main);
+  border-bottom: 1px solid var(--border-color);
+  -webkit-app-region: drag;
+}
+
+.window-bar-left {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  background: var(--bg-sidebar);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 12px;
+}
+
+.window-drag-region {
+  flex: 1;
+  min-width: 0;
+}
+
+.window-controls {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.window-control {
+  width: 44px;
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
+}
+
+.window-control:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.window-control-close:hover {
+  background: #c42b1c;
+  color: #ffffff;
+}
+
 /* ── 主布局 ── */
 .app {
   display: flex;
-  height: 100vh;
+  height: calc(100vh - var(--top-bar-height));
 }
 
 /* ── 侧边栏 ── */
@@ -69,7 +141,7 @@ body {
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border-color);
-  height: 100vh;
+  height: 100%;
 }
 
 .sidebar-header {
@@ -92,6 +164,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  -webkit-app-region: no-drag;
 }
 
 .icon-button {
@@ -494,7 +567,7 @@ body {
   flex: 1;
   position: relative;
   background: var(--bg-main);
-  height: 100vh;
+  height: 100%;
   /* WebView 会覆盖在此区域上方 */
 }
 

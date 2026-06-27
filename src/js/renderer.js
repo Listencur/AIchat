@@ -15,6 +15,9 @@
   const groupNameInput = document.getElementById('inputGroupName');
   const groupModelChecks = document.getElementById('groupModelChecks');
   const themeBtn = document.getElementById('btnTheme');
+  const windowMinimizeBtn = document.getElementById('btnWindowMinimize');
+  const windowMaximizeBtn = document.getElementById('btnWindowMaximize');
+  const windowCloseBtn = document.getElementById('btnWindowClose');
   const statusBtn = document.getElementById('btnStatus');
   const statusModal = document.getElementById('modalStatus');
   const statusCloseBtn = document.getElementById('btnCloseStatus');
@@ -1000,6 +1003,9 @@
     splitExitBtn.addEventListener('click', exitSplitMode);
     exportConversationBtn.addEventListener('click', exportConversation);
     themeBtn.addEventListener('click', toggleTheme);
+    windowMinimizeBtn.addEventListener('click', () => window.api.windowControls.minimize());
+    windowMaximizeBtn.addEventListener('click', () => window.api.windowControls.toggleMaximize());
+    windowCloseBtn.addEventListener('click', () => window.api.windowControls.close());
     statusBtn.addEventListener('click', openStatusModal);
     statusCloseBtn.addEventListener('click', closeStatusModal);
     statusRefreshBtn.addEventListener('click', refreshStatusPanel);

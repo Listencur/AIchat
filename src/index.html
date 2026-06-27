@@ -7,17 +7,25 @@
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
+  <header class="window-bar" id="windowBar">
+    <div class="window-bar-left">
+      <div class="header-actions">
+        <button class="icon-button" id="btnTheme" title="切换浅色模式" aria-label="切换浅色模式">☾</button>
+        <button class="icon-button" id="btnStatus" title="模型状态" aria-label="模型状态">◉</button>
+        <button class="icon-button" id="btnSettings" title="设置" aria-label="设置">⚙</button>
+      </div>
+    </div>
+    <div class="window-drag-region" aria-hidden="true"></div>
+    <div class="window-controls">
+      <button class="window-control" id="btnWindowMinimize" type="button" title="最小化" aria-label="最小化">−</button>
+      <button class="window-control" id="btnWindowMaximize" type="button" title="最大化/还原" aria-label="最大化/还原">□</button>
+      <button class="window-control window-control-close" id="btnWindowClose" type="button" title="关闭" aria-label="关闭">×</button>
+    </div>
+  </header>
+
   <div class="app">
     <!-- ── 侧边栏 ── -->
     <aside class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <div class="header-actions">
-          <button class="icon-button" id="btnTheme" title="切换浅色模式" aria-label="切换浅色模式">☾</button>
-          <button class="icon-button" id="btnStatus" title="模型状态" aria-label="模型状态">◉</button>
-          <button class="icon-button" id="btnSettings" title="设置" aria-label="设置">⚙</button>
-        </div>
-      </div>
-
       <section class="group-section">
         <div class="section-header">
           <span>场景</span>
