@@ -142,34 +142,6 @@
       </div>
       <form class="modal-body" id="settingsForm">
         <fieldset class="settings-group">
-          <legend>代理</legend>
-          <label class="radio-row">
-            <input type="radio" name="proxyMode" value="system" />
-            <span>
-              <strong>系统代理</strong>
-              <small>默认使用系统网络代理设置</small>
-            </span>
-          </label>
-          <label class="radio-row">
-            <input type="radio" name="proxyMode" value="custom" />
-            <span>
-              <strong>自定义代理</strong>
-              <small>例如 http://127.0.0.1:7897</small>
-            </span>
-          </label>
-          <label class="form-row proxy-url-row" id="proxyUrlRow">
-            <span class="form-label">代理地址</span>
-            <input type="text" id="inputProxyUrl" name="proxyUrl" placeholder="http://127.0.0.1:7897" />
-          </label>
-          <label class="radio-row">
-            <input type="radio" name="proxyMode" value="direct" />
-            <span>
-              <strong>直连</strong>
-              <small>不使用代理</small>
-            </span>
-          </label>
-        </fieldset>
-        <fieldset class="settings-group">
           <legend>会话</legend>
           <label class="toggle-row">
             <input type="checkbox" id="inputRestoreSnapshot" name="restoreSnapshot" />
@@ -177,6 +149,20 @@
               <strong>启动时恢复上次会话</strong>
               <small>恢复上次打开的模型、分屏布局和页面位置</small>
             </span>
+          </label>
+        </fieldset>
+        <fieldset class="settings-group">
+          <legend>组合键</legend>
+          <label class="toggle-row">
+            <input type="checkbox" id="inputShortcutEnabled" name="shortcutEnabled" />
+            <span>
+              <strong>启用全局快捷键</strong>
+              <small>在任意位置唤起快速输入窗口</small>
+            </span>
+          </label>
+          <label class="form-row">
+            <span class="form-label">组合键</span>
+            <input type="text" id="inputShortcutAccelerator" name="shortcutAccelerator" placeholder="Ctrl+Shift+Space" />
           </label>
         </fieldset>
         <fieldset class="settings-group">
@@ -204,17 +190,31 @@
           </label>
         </fieldset>
         <fieldset class="settings-group">
-          <legend>快捷键</legend>
-          <label class="toggle-row">
-            <input type="checkbox" id="inputShortcutEnabled" name="shortcutEnabled" />
+          <legend>代理</legend>
+          <label class="radio-row">
+            <input type="radio" name="proxyMode" value="system" />
             <span>
-              <strong>启用全局快捷键</strong>
-              <small>在任意位置唤起快速输入窗口</small>
+              <strong>系统代理</strong>
+              <small>默认使用系统网络代理设置</small>
             </span>
           </label>
-          <label class="form-row">
-            <span class="form-label">组合键</span>
-            <input type="text" id="inputShortcutAccelerator" name="shortcutAccelerator" placeholder="Ctrl+Shift+Space" />
+          <label class="radio-row">
+            <input type="radio" name="proxyMode" value="custom" />
+            <span>
+              <strong>自定义代理</strong>
+              <small>例如 http://127.0.0.1:7897</small>
+            </span>
+          </label>
+          <label class="form-row proxy-url-row" id="proxyUrlRow">
+            <span class="form-label">代理地址</span>
+            <input type="text" id="inputProxyUrl" name="proxyUrl" placeholder="http://127.0.0.1:7897" />
+          </label>
+          <label class="radio-row">
+            <input type="radio" name="proxyMode" value="direct" />
+            <span>
+              <strong>直连</strong>
+              <small>不使用代理</small>
+            </span>
           </label>
         </fieldset>
         <div class="modal-footer">
