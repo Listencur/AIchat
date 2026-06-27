@@ -6,6 +6,7 @@
  */
 
 (function () {
+  const sidebar = document.getElementById('sidebar');
   const groupList = document.getElementById('groupList');
   const addGroupBtn = document.getElementById('btnAddGroup');
   const groupModal = document.getElementById('modalAddGroup');
@@ -398,10 +399,17 @@
 
     modelContextMenu.hidden = false;
     const rect = modelContextMenu.getBoundingClientRect();
-    const left = Math.min(event.clientX, window.innerWidth - rect.width - 8);
-    const top = Math.min(event.clientY, window.innerHeight - rect.height - 8);
-    modelContextMenu.style.left = `${Math.max(8, left)}px`;
-    modelContextMenu.style.top = `${Math.max(8, top)}px`;
+    const sidebarRect = sidebar.getBoundingClientRect();
+    const margin = 8;
+    const minLeft = sidebarRect.left + margin;
+    const maxLeft = sidebarRect.right - rect.width - margin;
+    const maxTop = window.innerHeight - rect.height - margin;
+    const left = maxLeft >= minLeft
+      ? clamp(event.clientX, minLeft, maxLeft)
+      : minLeft;
+    const top = clamp(event.clientY, margin, Math.max(margin, maxTop));
+    modelContextMenu.style.left = `${left}px`;
+    modelContextMenu.style.top = `${top}px`;
   }
 
   function closeModelMenu() {

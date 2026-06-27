@@ -315,18 +315,23 @@ class ViewManager {
 
   setLoadingState(modelId, loading) {
     const entry = this.views.get(modelId);
-    if (!entry || entry.loading === loading) {
+    if (!entry) {
       return;
     }
 
-    entry.loading = loading;
-    this.emitLoadingState(modelId, loading);
+    const nextLoading = loading && !entry.hasContent;
+    if (entry.loading === nextLoading) {
+      return;
+    }
+
+    entry.loading = nextLoading;
+    this.emitLoadingState(modelId, nextLoading);
 
     if (this.splitMode || this.activeId !== modelId) {
       return;
     }
 
-    if (loading) {
+    if (nextLoading) {
       entry.view.setVisible(false);
       return;
     }
@@ -365,11 +370,23 @@ class ViewManager {
       debugLog(`[${model.name}] loading started`);
       this.setLoadingState(model.id, true);
     });
+    view.webContents.on('dom-ready', () => {
+      const entry = this.views.get(model.id);
+      if (entry) {
+        entry.hasContent = true;
+      }
+      this.setLoadingState(model.id, false);
+    });
     const restoreEntry = this.restoreEntries.get(model.id);
     let didRestoreScroll = false;
 
     view.webContents.on('did-finish-load', () => {
       debugLog(`[${model.name}] loading finished`);
+      const entry = this.views.get(model.id);
+      if (entry) {
+        entry.hasContent = true;
+      }
+      this.setLoadingState(model.id, false);
 
       if (didRestoreScroll || !restoreEntry || restoreEntry.scrollY <= 0) {
         return;
@@ -399,7 +416,7 @@ class ViewManager {
     view.setVisible(false);
     view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
 
-    this.views.set(model.id, { view, model, loading: true });
+    this.views.set(model.id, { view, model, loading: true, hasContent: false });
     this.emitLoadingState(model.id, true);
 
     // 设置代理后再加载 URL。
