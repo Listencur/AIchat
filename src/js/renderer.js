@@ -43,10 +43,12 @@
   let groupsCache = [];
   let activeGroupId = 'all';
   let loadedModelIds = new Set();
+  let loadingModelIds = new Set();
   let splitSelecting = false;
   let splitRatios = [];
   let draggedModelId = null;
   let contextModelId = null;
+  let viewEventsRegistered = false;
   const splitSelection = new Set();
 
   /**
@@ -161,13 +163,47 @@
    * 切换到指定模型
    */
   function switchModel(id) {
-    window.api.view.switch(id).then((ok) => {
-      if (ok) {
-        loadedModelIds.add(id);
-        updateActive(id);
-        renderModels(getVisibleModels());
-      }
-    });
+    const shouldShowLoading = !loadedModelIds.has(id);
+    if (shouldShowLoading) {
+      setModelLoading(id, true);
+    }
+    updateActive(id);
+    renderModels(getVisibleModels());
+
+    window.api.view.switch(id)
+      .then((ok) => {
+        if (ok) {
+          loadedModelIds.add(id);
+          renderModels(getVisibleModels());
+        } else if (shouldShowLoading) {
+          setModelLoading(id, false);
+        }
+      })
+      .catch(() => {
+        if (shouldShowLoading) {
+          setModelLoading(id, false);
+        }
+      });
+  }
+
+  function setModelLoading(id, loading) {
+    if (!id) return;
+
+    if (loading) {
+      loadingModelIds.add(id);
+    } else {
+      loadingModelIds.delete(id);
+    }
+
+    updateMainPlaceholder();
+  }
+
+  function updateMainPlaceholder() {
+    const splitVisible = splitSelecting && splitSelection.size >= 2;
+    const loadingActive = Boolean(activeModelId && loadingModelIds.has(activeModelId) && !splitVisible);
+
+    mainArea.classList.toggle('is-loading', loadingActive);
+    mainPlaceholder.style.display = (!activeModelId || loadingActive) ? 'flex' : 'none';
   }
 
   async function closeModel(id) {
@@ -458,9 +494,11 @@
     if (!state) return;
 
     loadedModelIds = new Set(Array.isArray(state.loadedIds) ? state.loadedIds : []);
+    loadingModelIds = new Set(Array.from(loadingModelIds).filter((id) => loadedModelIds.has(id)));
 
     if (closedId) {
       splitSelection.delete(closedId);
+      loadingModelIds.delete(closedId);
     }
 
     if (state.splitMode && Array.isArray(state.splitIds) && state.splitIds.length >= 2) {
@@ -593,6 +631,7 @@
 
     updateSplitControls();
     renderModels(visibleModelsCache);
+    updateMainPlaceholder();
   }
 
   /**
@@ -625,7 +664,6 @@
       const ok = await window.api.view.enterSplit(ids);
       if (ok) {
         ids.forEach((id) => loadedModelIds.add(id));
-        mainPlaceholder.style.display = 'none';
         updateActive(ids[0]);
         renderModels(getVisibleModels());
         renderSplitResizers();
@@ -635,6 +673,7 @@
 
     await window.api.view.exitSplit();
     clearSplitResizers();
+    updateMainPlaceholder();
   }
 
   /**
@@ -648,6 +687,7 @@
     clearSplitResizers();
     updateSplitControls();
     renderModels(getVisibleModels());
+    updateMainPlaceholder();
   }
 
   /**
@@ -806,7 +846,6 @@
       if (ok) {
         await window.api.view.setSplitRatios(splitRatios);
         splitIds.forEach((id) => loadedModelIds.add(id));
-        mainPlaceholder.style.display = 'none';
         updateActive(splitIds[0]);
         renderModels(getVisibleModels());
         renderSplitResizers();
@@ -831,7 +870,7 @@
    */
   function updateActive(id) {
     activeModelId = id;
-    mainPlaceholder.style.display = id ? 'none' : 'flex';
+    updateMainPlaceholder();
 
     document.querySelectorAll('.model-item').forEach((item) => {
       item.classList.toggle('active', item.dataset.id === id);
@@ -914,6 +953,40 @@
     closeGroupModal();
   }
 
+  function registerViewEvents() {
+    if (viewEventsRegistered) return;
+    viewEventsRegistered = true;
+
+    window.api.view.onSwitched((data) => {
+      const id = data.id || data;
+      updateActive(id);
+      if (statusModal.classList.contains('show')) {
+        refreshStatusPanel();
+      }
+    });
+
+    window.api.view.onLoadingChanged((data) => {
+      if (!data || !data.id) return;
+
+      setModelLoading(data.id, Boolean(data.loading));
+      if (!data.loading) {
+        loadedModelIds.add(data.id);
+      }
+      renderModels(getVisibleModels());
+
+      if (statusModal.classList.contains('show')) {
+        refreshStatusPanel();
+      }
+    });
+
+    window.api.view.onClosed((data) => {
+      syncViewState(data.state, data.id);
+      if (statusModal.classList.contains('show')) {
+        refreshStatusPanel();
+      }
+    });
+  }
+
   // ── 初始化 ──
   document.addEventListener('DOMContentLoaded', async () => {
     // 加载模型列表
@@ -927,6 +1000,7 @@
     renderGroups(groups);
     renderModels(getVisibleModels());
     updateSplitControls();
+    registerViewEvents();
 
     // 自动恢复上次会话；未开启或恢复失败时切换到第一个模型
     const restored = await restoreInitialView(models);
@@ -940,6 +1014,7 @@
       modelsCache = list;
       const modelIds = new Set(list.map((model) => model.id));
       loadedModelIds = new Set(Array.from(loadedModelIds).filter((id) => modelIds.has(id)));
+      loadingModelIds = new Set(Array.from(loadingModelIds).filter((id) => modelIds.has(id)));
       for (const id of Array.from(splitSelection)) {
         if (!modelIds.has(id)) {
           splitSelection.delete(id);
@@ -960,22 +1035,6 @@
       renderGroups(groupsCache);
       renderModels(getVisibleModels());
       ensureActiveModelVisible();
-    });
-
-    // 监听视图切换
-    window.api.view.onSwitched((data) => {
-      const id = data.id || data;
-      updateActive(id);
-      if (statusModal.classList.contains('show')) {
-        refreshStatusPanel();
-      }
-    });
-
-    window.api.view.onClosed((data) => {
-      syncViewState(data.state, data.id);
-      if (statusModal.classList.contains('show')) {
-        refreshStatusPanel();
-      }
     });
 
     modelContextMenu.addEventListener('click', (event) => {

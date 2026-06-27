@@ -103,6 +103,13 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.removeListener('view:splitChanged', handler);
     },
 
+    /** 监听模型加载状态变化 */
+    onLoadingChanged: (callback) => {
+      const handler = (_event, data) => callback(data);
+      ipcRenderer.on('view:loadingChanged', handler);
+      return () => ipcRenderer.removeListener('view:loadingChanged', handler);
+    },
+
     /** 监听模型视图结束事件 */
     onClosed: (callback) => {
       const handler = (_event, data) => callback(data);

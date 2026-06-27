@@ -7,6 +7,8 @@ const SIDEBAR_WIDTH = 240;
 // ⚠️ 此值必须与 src/css/style.css 中 --top-bar-height 保持一致
 const TOP_BAR_HEIGHT = 36;
 const SPLIT_GUTTER_WIDTH = 10;
+const DARK_LOADING_BACKGROUND = '#181818';
+const LIGHT_LOADING_BACKGROUND = '#ffffff';
 const DEBUG = process.argv.includes('--dev');
 const PROMPT_SUBMIT_TIMEOUT_MS = 12000;
 const CONVERSATION_EXTRACT_SCRIPT = `
@@ -282,8 +284,55 @@ class ViewManager {
     this.proxyConfig = proxyConfig;
 
     for (const [, entry] of this.views) {
+      this.applyViewBackground(entry.view);
       await this.applyProxyToSession(entry.view.webContents.session, entry.model);
     }
+  }
+
+  getLoadingBackgroundColor() {
+    return this.proxyConfig.theme === 'light' ? LIGHT_LOADING_BACKGROUND : DARK_LOADING_BACKGROUND;
+  }
+
+  applyViewBackground(view) {
+    if (!view || typeof view.setBackgroundColor !== 'function') {
+      return;
+    }
+
+    try {
+      view.setBackgroundColor(this.getLoadingBackgroundColor());
+    } catch (error) {
+      debugError('[ViewManager] set view background failed', error);
+    }
+  }
+
+  emitLoadingState(modelId, loading) {
+    if (!this.win || this.win.isDestroyed()) {
+      return;
+    }
+
+    this.win.webContents.send('view:loadingChanged', { id: modelId, loading });
+  }
+
+  setLoadingState(modelId, loading) {
+    const entry = this.views.get(modelId);
+    if (!entry || entry.loading === loading) {
+      return;
+    }
+
+    entry.loading = loading;
+    this.emitLoadingState(modelId, loading);
+
+    if (this.splitMode || this.activeId !== modelId) {
+      return;
+    }
+
+    if (loading) {
+      entry.view.setVisible(false);
+      return;
+    }
+
+    entry.view.setVisible(true);
+    this.updateBounds(modelId);
   }
 
   /**
@@ -305,6 +354,7 @@ class ViewManager {
         sandbox: true,
       },
     });
+    this.applyViewBackground(view);
 
     // 用默认 UA 去掉 Electron 标识（保留真实 Chrome 版本号，避免 Cloudflare 检测版本不匹配）
     const defaultUA = view.webContents.getUserAgent();
@@ -313,6 +363,7 @@ class ViewManager {
     // ── 调试日志：排查白屏问题 ──
     view.webContents.on('did-start-loading', () => {
       debugLog(`[${model.name}] loading started`);
+      this.setLoadingState(model.id, true);
     });
     const restoreEntry = this.restoreEntries.get(model.id);
     let didRestoreScroll = false;
@@ -334,9 +385,11 @@ class ViewManager {
     });
     view.webContents.on('did-fail-load', (_e, errorCode, errorDesc) => {
       debugError(`[${model.name}] loading failed: ${errorCode} - ${errorDesc}`);
+      this.setLoadingState(model.id, false);
     });
     view.webContents.on('did-stop-loading', () => {
       debugLog(`[${model.name}] loading stopped`);
+      this.setLoadingState(model.id, false);
     });
 
     // 添加到窗口（在上层，覆盖 HTML 的侧边栏右侧区域）
@@ -346,7 +399,8 @@ class ViewManager {
     view.setVisible(false);
     view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
 
-    this.views.set(model.id, { view, model });
+    this.views.set(model.id, { view, model, loading: true });
+    this.emitLoadingState(model.id, true);
 
     // 设置代理后再加载 URL。
     const ses = view.webContents.session;
@@ -405,10 +459,11 @@ class ViewManager {
     }
 
     const view = await this.ensureView(targetModel);
-    view.setVisible(true);
     this.updateBounds(modelId);
 
     this.activeId = modelId;
+    const entry = this.views.get(modelId);
+    view.setVisible(!entry || !entry.loading);
   }
 
   waitForWebContentsReady(webContents, timeoutMs = PROMPT_SUBMIT_TIMEOUT_MS) {
@@ -833,7 +888,7 @@ class ViewManager {
           inSplit: this.splitMode && this.splitIds.includes(model.id),
           title: webContents ? webContents.getTitle() : '',
           url: webContents ? webContents.getURL() : model.url,
-          isLoading: webContents ? webContents.isLoading() : false,
+          isLoading: entry ? entry.loading || (webContents ? webContents.isLoading() : false) : false,
           processId,
           memoryMb: processId && memoryByPid.has(processId) ? memoryByPid.get(processId) : null,
         };
@@ -868,7 +923,7 @@ class ViewManager {
     if (!this.activeId) return;
     const entry = this.views.get(this.activeId);
     if (entry) {
-      entry.view.setVisible(true);
+      entry.view.setVisible(!entry.loading);
       this.updateBounds(this.activeId);
     }
   }
