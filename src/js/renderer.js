@@ -14,6 +14,13 @@
   const groupForm = document.getElementById('addGroupForm');
   const groupNameInput = document.getElementById('inputGroupName');
   const groupModelChecks = document.getElementById('groupModelChecks');
+  const statusBtn = document.getElementById('btnStatus');
+  const statusModal = document.getElementById('modalStatus');
+  const statusCloseBtn = document.getElementById('btnCloseStatus');
+  const statusRefreshBtn = document.getElementById('btnRefreshStatus');
+  const closeInactiveModelsBtn = document.getElementById('btnCloseInactiveModels');
+  const statusSummary = document.getElementById('statusSummary');
+  const statusList = document.getElementById('statusList');
   const modelList = document.getElementById('modelList');
   const modelContextMenu = document.getElementById('modelContextMenu');
   const mainPlaceholder = document.getElementById('mainPlaceholder');
@@ -188,6 +195,144 @@
       exportConversationBtn.disabled = false;
       exportConversationBtn.querySelector('span:last-child').textContent = originalText;
     }
+  }
+
+  async function openStatusModal() {
+    await window.api.view.setVisible(false);
+    statusModal.classList.add('show');
+    await refreshStatusPanel();
+  }
+
+  function closeStatusModal() {
+    statusModal.classList.remove('show');
+    window.api.view.setVisible(true);
+  }
+
+  async function refreshStatusPanel() {
+    const status = await window.api.view.getStatus();
+    renderStatusPanel(status);
+  }
+
+  function renderStatusPanel(status) {
+    const models = Array.isArray(status.models) ? status.models : [];
+    const loadedCount = models.filter((model) => model.loaded).length;
+    const visibleCount = models.filter((model) => model.visible).length;
+    const backgroundCount = models.filter((model) => model.loaded && !model.visible).length;
+
+    statusSummary.textContent = `已运行 ${loadedCount}/${models.length} · 当前显示 ${visibleCount} · 后台 ${backgroundCount}`;
+    closeInactiveModelsBtn.disabled = backgroundCount === 0;
+    statusList.innerHTML = '';
+
+    models.forEach((model) => {
+      const item = document.createElement('section');
+      item.className = 'status-item';
+      item.classList.toggle('is-active', model.active);
+      item.style.setProperty('--model-color', model.color);
+
+      const icon = createModelIcon(model);
+      item.appendChild(icon);
+
+      const content = document.createElement('div');
+      content.className = 'status-content';
+
+      const titleRow = document.createElement('div');
+      titleRow.className = 'status-title-row';
+
+      const name = document.createElement('span');
+      name.className = 'status-name';
+      name.textContent = model.name;
+
+      const badges = document.createElement('span');
+      badges.className = 'status-badges';
+      badges.appendChild(createStatusBadge(model.loaded ? (model.isLoading ? '加载中' : '运行中') : '未运行', model.loaded ? 'running' : 'idle'));
+      if (model.active) badges.appendChild(createStatusBadge('当前', 'active'));
+      if (model.inSplit) badges.appendChild(createStatusBadge('分屏', 'split'));
+
+      titleRow.appendChild(name);
+      titleRow.appendChild(badges);
+
+      const pageTitle = document.createElement('div');
+      pageTitle.className = 'status-page-title';
+      pageTitle.textContent = model.loaded && model.title ? model.title : '尚未创建页面';
+
+      const url = document.createElement('div');
+      url.className = 'status-url';
+      url.textContent = model.url || '';
+
+      const meta = document.createElement('div');
+      meta.className = 'status-meta';
+      meta.textContent = formatStatusMeta(model);
+
+      content.appendChild(titleRow);
+      content.appendChild(pageTitle);
+      content.appendChild(url);
+      content.appendChild(meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'status-item-actions';
+      actions.appendChild(createStatusAction('切换', () => switchFromStatus(model.id)));
+      actions.appendChild(createStatusAction('刷新', () => refreshModelFromStatus(model.id), !model.loaded));
+      actions.appendChild(createStatusAction('结束', () => closeModelFromStatus(model.id), !model.loaded, true));
+
+      item.appendChild(content);
+      item.appendChild(actions);
+      statusList.appendChild(item);
+    });
+  }
+
+  function createStatusBadge(text, type) {
+    const badge = document.createElement('span');
+    badge.className = `status-badge ${type}`;
+    badge.textContent = text;
+    return badge;
+  }
+
+  function createStatusAction(text, handler, disabled = false, danger = false) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = danger ? 'btn-status danger' : 'btn-status';
+    button.textContent = text;
+    button.disabled = disabled;
+    button.addEventListener('click', handler);
+    return button;
+  }
+
+  function formatStatusMeta(model) {
+    if (!model.loaded) {
+      return '释放状态';
+    }
+
+    const parts = [];
+    if (model.memoryMb) parts.push(`内存 ${model.memoryMb} MB`);
+    if (model.processId) parts.push(`PID ${model.processId}`);
+    return parts.length > 0 ? parts.join(' · ') : '运行中';
+  }
+
+  async function switchFromStatus(id) {
+    const ok = await window.api.view.switch(id);
+    if (ok) {
+      loadedModelIds.add(id);
+      updateActive(id);
+      renderModels(getVisibleModels());
+      await window.api.view.setVisible(false);
+      await refreshStatusPanel();
+    }
+  }
+
+  async function refreshModelFromStatus(id) {
+    await window.api.view.refreshModel(id);
+    await refreshStatusPanel();
+  }
+
+  async function closeModelFromStatus(id) {
+    await closeModel(id);
+    await refreshStatusPanel();
+  }
+
+  async function closeInactiveModelsFromStatus() {
+    const state = await window.api.view.closeInactive();
+    syncViewState(state);
+    await refreshStatusPanel();
   }
 
   async function deleteModel(id) {
@@ -810,10 +955,16 @@
     window.api.view.onSwitched((data) => {
       const id = data.id || data;
       updateActive(id);
+      if (statusModal.classList.contains('show')) {
+        refreshStatusPanel();
+      }
     });
 
     window.api.view.onClosed((data) => {
       syncViewState(data.state, data.id);
+      if (statusModal.classList.contains('show')) {
+        refreshStatusPanel();
+      }
     });
 
     modelContextMenu.addEventListener('click', (event) => {
@@ -840,6 +991,10 @@
 
     splitExitBtn.addEventListener('click', exitSplitMode);
     exportConversationBtn.addEventListener('click', exportConversation);
+    statusBtn.addEventListener('click', openStatusModal);
+    statusCloseBtn.addEventListener('click', closeStatusModal);
+    statusRefreshBtn.addEventListener('click', refreshStatusPanel);
+    closeInactiveModelsBtn.addEventListener('click', closeInactiveModelsFromStatus);
 
     addGroupBtn.addEventListener('click', openGroupModal);
     groupCloseBtn.addEventListener('click', closeGroupModal);
@@ -850,9 +1005,17 @@
       if (event.target === groupModal) closeGroupModal();
     });
 
+    statusModal.addEventListener('click', (event) => {
+      if (event.target === statusModal) closeStatusModal();
+    });
+
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && groupModal.classList.contains('show')) {
         closeGroupModal();
+      }
+
+      if (event.key === 'Escape' && statusModal.classList.contains('show')) {
+        closeStatusModal();
       }
 
       if (event.key === 'Escape' && !modelContextMenu.hidden) {

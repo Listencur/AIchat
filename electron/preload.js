@@ -62,11 +62,20 @@ contextBridge.exposeInMainWorld('api', {
     /** 刷新当前视图 */
     refresh: () => ipcRenderer.invoke('view:refresh'),
 
+    /** 刷新指定模型视图 */
+    refreshModel: (id) => ipcRenderer.invoke('view:refreshModel', id),
+
+    /** 获取模型状态面板数据 */
+    getStatus: () => ipcRenderer.invoke('view:getStatus'),
+
     /** 导出当前对话为 Markdown */
     exportConversation: () => ipcRenderer.invoke('view:exportConversation'),
 
     /** 结束指定模型的 WebView，释放内存 */
     close: (id) => ipcRenderer.invoke('view:close', id),
+
+    /** 结束后台已加载但当前未展示的 WebView */
+    closeInactive: () => ipcRenderer.invoke('view:closeInactive'),
 
     /** 进入分屏模式 */
     enterSplit: (ids) => ipcRenderer.invoke('view:enterSplit', ids),

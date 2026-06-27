@@ -577,6 +577,21 @@ function hasExportContent(exportData) {
     || Boolean(normalizeExportText(exportData.text));
 }
 
+function getProcessMemoryByPid() {
+  const memoryByPid = new Map();
+
+  app.getAppMetrics().forEach((metric) => {
+    const workingSetSize = metric && metric.memory ? Number(metric.memory.workingSetSize) : 0;
+    if (!metric.pid || !workingSetSize) {
+      return;
+    }
+
+    memoryByPid.set(metric.pid, Math.round((workingSetSize / 1024) * 10) / 10);
+  });
+
+  return memoryByPid;
+}
+
 // ── 窗口创建 ──
 
 function createWindow() {
@@ -1030,6 +1045,16 @@ function registerIPC() {
     return true;
   });
 
+  // 刷新指定模型视图
+  ipcMain.handle('view:refreshModel', (_event, modelId) => {
+    return viewManager.refreshView(modelId);
+  });
+
+  // 读取模型状态面板数据
+  ipcMain.handle('view:getStatus', () => {
+    return viewManager.getStatus(loadModels(), getProcessMemoryByPid());
+  });
+
   // 导出当前活跃模型的对话为 Markdown
   ipcMain.handle('view:exportConversation', async () => {
     if (!viewManager) {
@@ -1072,6 +1097,17 @@ function registerIPC() {
   ipcMain.handle('view:close', (_event, modelId) => {
     const state = viewManager.closeView(modelId);
     mainWindow.webContents.send('view:closed', { id: modelId, state });
+    mainWindow.webContents.send('view:splitChanged', { enabled: state.splitMode, ids: state.splitIds });
+    mainWindow.webContents.send('view:switched', { id: state.activeId });
+    return state;
+  });
+
+  // 结束后台已加载但当前未展示的模型视图
+  ipcMain.handle('view:closeInactive', () => {
+    const state = viewManager.closeInactiveViews();
+    state.closedIds.forEach((id) => {
+      mainWindow.webContents.send('view:closed', { id, state });
+    });
     mainWindow.webContents.send('view:splitChanged', { enabled: state.splitMode, ids: state.splitIds });
     mainWindow.webContents.send('view:switched', { id: state.activeId });
     return state;

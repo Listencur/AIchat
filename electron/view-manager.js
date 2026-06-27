@@ -452,6 +452,19 @@ class ViewManager {
   }
 
   /**
+   * 刷新指定模型的 View；未加载时不做任何操作。
+   */
+  refreshView(modelId) {
+    const entry = this.views.get(modelId);
+    if (entry && !entry.view.webContents.isDestroyed()) {
+      entry.view.webContents.reload();
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * 只读提取当前活跃模型的页面内容，用于导出 Markdown。
    */
   async extractActiveConversation() {
@@ -582,6 +595,25 @@ class ViewManager {
   }
 
   /**
+   * 结束后台已加载但当前未展示的模型页面。
+   */
+  closeInactiveViews() {
+    const visibleIds = new Set(this.splitMode ? this.splitIds : [this.activeId].filter(Boolean));
+    const closedIds = [];
+
+    for (const modelId of Array.from(this.views.keys())) {
+      if (visibleIds.has(modelId)) continue;
+      this.removeView(modelId);
+      closedIds.push(modelId);
+    }
+
+    return {
+      ...this.getState(),
+      closedIds,
+    };
+  }
+
+  /**
    * 获取当前视图状态，供渲染进程同步 UI。
    */
   getState() {
@@ -591,6 +623,44 @@ class ViewManager {
       splitIds: this.splitIds.slice(),
       splitRatios: this.splitMode ? this.getNormalizedSplitRatios() : [],
       loadedIds: Array.from(this.views.keys()),
+    };
+  }
+
+  /**
+   * 获取模型运行状态，供状态面板展示。
+   */
+  getStatus(models = [], memoryByPid = new Map()) {
+    const state = this.getState();
+    const visibleIds = new Set(this.splitMode ? this.splitIds : [this.activeId].filter(Boolean));
+
+    return {
+      ...state,
+      models: models.map((model) => {
+        const entry = this.views.get(model.id);
+        const webContents = entry && !entry.view.webContents.isDestroyed()
+          ? entry.view.webContents
+          : null;
+        const processId = webContents && typeof webContents.getOSProcessId === 'function'
+          ? webContents.getOSProcessId()
+          : 0;
+
+        return {
+          id: model.id,
+          name: model.name,
+          icon: model.icon || '🤖',
+          iconUrl: model.iconUrl || '',
+          color: model.color || '#666666',
+          loaded: Boolean(webContents),
+          active: model.id === this.activeId,
+          visible: visibleIds.has(model.id),
+          inSplit: this.splitMode && this.splitIds.includes(model.id),
+          title: webContents ? webContents.getTitle() : '',
+          url: webContents ? webContents.getURL() : model.url,
+          isLoading: webContents ? webContents.isLoading() : false,
+          processId,
+          memoryMb: processId && memoryByPid.has(processId) ? memoryByPid.get(processId) : null,
+        };
+      }),
     };
   }
 

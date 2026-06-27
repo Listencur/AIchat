@@ -12,7 +12,10 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <span class="sidebar-title">AI 对话聚合</span>
-        <button class="icon-button" id="btnSettings" title="设置" aria-label="设置">⚙</button>
+        <div class="header-actions">
+          <button class="icon-button" id="btnStatus" title="模型状态" aria-label="模型状态">◉</button>
+          <button class="icon-button" id="btnSettings" title="设置" aria-label="设置">⚙</button>
+        </div>
       </div>
 
       <section class="group-section">
@@ -65,6 +68,26 @@
       </div>
       <div class="split-resizers" id="splitResizers" hidden></div>
     </main>
+  </div>
+
+  <!-- ── 模型状态弹窗 ── -->
+  <div class="modal-overlay" id="modalStatus">
+    <div class="modal modal-status">
+      <div class="modal-header">
+        <h2>模型状态</h2>
+        <button class="modal-close" id="btnCloseStatus">&times;</button>
+      </div>
+      <div class="modal-body status-body">
+        <div class="status-toolbar">
+          <div class="status-summary" id="statusSummary">读取中</div>
+          <div class="status-actions">
+            <button type="button" class="btn-small" id="btnRefreshStatus">刷新</button>
+            <button type="button" class="btn-small" id="btnCloseInactiveModels">结束后台</button>
+          </div>
+        </div>
+        <div class="status-list" id="statusList"></div>
+      </div>
+    </div>
   </div>
 
   <!-- ── 添加分组弹窗 ── -->
