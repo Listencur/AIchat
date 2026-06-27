@@ -416,6 +416,17 @@ body {
   background: rgba(124, 124, 255, 0.08);
 }
 
+.btn-tool:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.btn-tool:disabled:hover {
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+  background: transparent;
+}
+
 .btn-add-model .btn-icon,
 .btn-tool .btn-icon {
   font-size: 16px;

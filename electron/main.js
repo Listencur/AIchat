@@ -508,6 +508,75 @@ function generateGroupId(name) {
   return `group-${base || 'custom'}-${Date.now().toString(36)}`;
 }
 
+function sanitizeFileName(name) {
+  const value = typeof name === 'string' && name.trim() ? name.trim() : 'AI对话导出';
+  return value.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/\s+/g, ' ').slice(0, 80);
+}
+
+function formatDateForFile(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, '0');
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    '-',
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+  ].join('');
+}
+
+function normalizeExportText(value) {
+  return String(value || '')
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function buildConversationMarkdown(exportData) {
+  const exportedAt = new Date().toLocaleString('zh-CN', { hour12: false });
+  const title = normalizeExportText(exportData.title) || '未命名对话';
+  const modelName = normalizeExportText(exportData.modelName) || '未知模型';
+  const sourceUrl = normalizeExportText(exportData.url) || '';
+  const messages = Array.isArray(exportData.messages) ? exportData.messages : [];
+  const lines = [`# ${title}`, '', `- 模型：${modelName}`];
+
+  if (sourceUrl) {
+    lines.push(`- 来源：${sourceUrl}`);
+  }
+
+  lines.push(`- 导出时间：${exportedAt}`, '', '---', '');
+
+  if (messages.length > 0) {
+    messages.forEach((message, index) => {
+      const role = normalizeExportText(message.role) || `内容 ${index + 1}`;
+      const content = normalizeExportText(message.content);
+      if (!content) return;
+
+      lines.push(`## ${role}`);
+      lines.push('');
+      lines.push(content);
+      lines.push('');
+    });
+  } else {
+    const text = normalizeExportText(exportData.text);
+    if (text) {
+      lines.push('## 页面正文');
+      lines.push('');
+      lines.push(text);
+      lines.push('');
+    }
+  }
+
+  return `${lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()}\n`;
+}
+
+function hasExportContent(exportData) {
+  const messages = Array.isArray(exportData.messages) ? exportData.messages : [];
+  return messages.some((message) => normalizeExportText(message.content))
+    || Boolean(normalizeExportText(exportData.text));
+}
+
 // ── 窗口创建 ──
 
 function createWindow() {
@@ -959,6 +1028,44 @@ function registerIPC() {
   ipcMain.handle('view:refresh', () => {
     viewManager.refreshActive();
     return true;
+  });
+
+  // 导出当前活跃模型的对话为 Markdown
+  ipcMain.handle('view:exportConversation', async () => {
+    if (!viewManager) {
+      return { ok: false, reason: 'view-manager-missing' };
+    }
+
+    const exportData = await viewManager.extractActiveConversation();
+    if (!exportData.ok) {
+      return exportData;
+    }
+
+    if (!hasExportContent(exportData)) {
+      return { ok: false, reason: 'empty-content' };
+    }
+
+    const markdown = buildConversationMarkdown(exportData);
+    const defaultName = `${sanitizeFileName(exportData.modelName)}-${formatDateForFile()}.md`;
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出对话为 Markdown',
+      defaultPath: path.join(app.getPath('documents'), defaultName),
+      filters: [
+        { name: 'Markdown', extensions: ['md'] },
+        { name: '文本文件', extensions: ['txt'] },
+      ],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { ok: false, canceled: true };
+    }
+
+    fs.writeFileSync(result.filePath, markdown, 'utf-8');
+    return {
+      ok: true,
+      filePath: result.filePath,
+      messageCount: Array.isArray(exportData.messages) ? exportData.messages.length : 0,
+    };
   });
 
   // 结束指定模型的 WebView，用于释放内存；不删除模型配置和登录态

@@ -62,6 +62,9 @@ contextBridge.exposeInMainWorld('api', {
     /** 刷新当前视图 */
     refresh: () => ipcRenderer.invoke('view:refresh'),
 
+    /** 导出当前对话为 Markdown */
+    exportConversation: () => ipcRenderer.invoke('view:exportConversation'),
+
     /** 结束指定模型的 WebView，释放内存 */
     close: (id) => ipcRenderer.invoke('view:close', id),
 

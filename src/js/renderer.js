@@ -18,6 +18,7 @@
   const modelContextMenu = document.getElementById('modelContextMenu');
   const mainPlaceholder = document.getElementById('mainPlaceholder');
   const splitToggleBtn = document.getElementById('btnToggleSplit');
+  const exportConversationBtn = document.getElementById('btnExportConversation');
   const splitActions = document.getElementById('splitActions');
   const splitHint = document.getElementById('splitHint');
   const splitExitBtn = document.getElementById('btnExitSplit');
@@ -159,6 +160,34 @@
 
     const state = await window.api.view.close(id);
     syncViewState(state, id);
+  }
+
+  async function exportConversation() {
+    if (!activeModelId) {
+      window.alert('请先选择一个模型。');
+      return;
+    }
+
+    exportConversationBtn.disabled = true;
+    const originalText = exportConversationBtn.querySelector('span:last-child').textContent;
+    exportConversationBtn.querySelector('span:last-child').textContent = '导出中';
+
+    try {
+      const result = await window.api.view.exportConversation();
+      if (result && result.canceled) {
+        return;
+      }
+
+      if (!result || !result.ok) {
+        window.alert('当前页面暂时无法导出，可能是页面尚未加载完成或站点结构已变化。');
+        return;
+      }
+
+      window.alert(`导出完成：\n${result.filePath}`);
+    } finally {
+      exportConversationBtn.disabled = false;
+      exportConversationBtn.querySelector('span:last-child').textContent = originalText;
+    }
   }
 
   async function deleteModel(id) {
@@ -810,6 +839,7 @@
     });
 
     splitExitBtn.addEventListener('click', exitSplitMode);
+    exportConversationBtn.addEventListener('click', exportConversation);
 
     addGroupBtn.addEventListener('click', openGroupModal);
     groupCloseBtn.addEventListener('click', closeGroupModal);

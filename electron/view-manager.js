@@ -6,6 +6,99 @@ const { WebContentsView } = require('electron');
 const SIDEBAR_WIDTH = 240;
 const SPLIT_GUTTER_WIDTH = 10;
 const DEBUG = process.argv.includes('--dev');
+const CONVERSATION_EXTRACT_SCRIPT = `
+(() => {
+  const normalize = (text) => String(text || '')
+    .replace(/\\r/g, '')
+    .replace(/[\\t\\f\\v]+/g, ' ')
+    .replace(/[ \\u00a0]+\\n/g, '\\n')
+    .replace(/\\n[ \\u00a0]+/g, '\\n')
+    .replace(/\\n{3,}/g, '\\n\\n')
+    .trim();
+
+  const textFromElement = (element) => {
+    const clone = element.cloneNode(true);
+    clone.querySelectorAll('script, style, noscript, svg, button, nav, header, footer, [aria-hidden="true"]').forEach((node) => node.remove());
+    clone.querySelectorAll('pre').forEach((pre) => {
+      const code = normalize(pre.innerText || pre.textContent);
+      const replacement = document.createElement('div');
+      const fence = String.fromCharCode(96, 96, 96);
+      replacement.textContent = code ? '\\n\\n' + fence + '\\n' + code + '\\n' + fence + '\\n\\n' : '';
+      pre.replaceWith(replacement);
+    });
+    return normalize(clone.innerText || clone.textContent);
+  };
+
+  const roleLabel = (role) => {
+    const value = String(role || '').toLowerCase();
+    if (value.includes('user') || value.includes('human') || value.includes('query')) return '用户';
+    if (value.includes('assistant') || value.includes('model') || value.includes('bot') || value.includes('ai')) return 'AI';
+    return '';
+  };
+
+  const title = normalize(document.title) || '未命名对话';
+  const url = location.href;
+  const main = document.querySelector('main, [role="main"], article') || document.body;
+  const messages = [];
+  const seen = new Set();
+
+  const pushMessage = (role, element) => {
+    if (!element || seen.has(element)) return;
+    const content = textFromElement(element);
+    if (!content || content.length < 2) return;
+    seen.add(element);
+    messages.push({
+      role: roleLabel(role) || '内容',
+      content,
+    });
+  };
+
+  document.querySelectorAll('[data-message-author-role]').forEach((element) => {
+    pushMessage(element.getAttribute('data-message-author-role'), element);
+  });
+
+  if (messages.length === 0) {
+    const selector = [
+      'user-query',
+      'model-response',
+      'message-content',
+      '[data-test-id*="user" i]',
+      '[data-test-id*="response" i]',
+      '[class*="user-query" i]',
+      '[class*="model-response" i]',
+      '[class*="assistant" i]',
+      '[class*="message" i]'
+    ].join(',');
+
+    Array.from(main.querySelectorAll(selector))
+      .filter((element) => !element.querySelector(selector))
+      .forEach((element) => {
+        const descriptor = [
+          element.tagName,
+          element.getAttribute('data-test-id'),
+          element.className,
+          element.getAttribute('aria-label')
+        ].join(' ');
+        pushMessage(descriptor, element);
+      });
+  }
+
+  if (messages.length > 0) {
+    const compact = [];
+    const textSeen = new Set();
+    messages.forEach((message) => {
+      const key = message.role + '\\n' + message.content;
+      if (textSeen.has(key)) return;
+      textSeen.add(key);
+      compact.push(message);
+    });
+    return { title, url, messages: compact };
+  }
+
+  const text = textFromElement(main);
+  return { title, url, messages: [], text };
+})();
+`;
 
 function debugLog(...args) {
   if (DEBUG) {
@@ -355,6 +448,37 @@ class ViewManager {
     const entry = this.views.get(this.activeId);
     if (entry) {
       entry.view.webContents.reload();
+    }
+  }
+
+  /**
+   * 只读提取当前活跃模型的页面内容，用于导出 Markdown。
+   */
+  async extractActiveConversation() {
+    if (!this.activeId) {
+      return { ok: false, reason: 'no-active-view' };
+    }
+
+    const entry = this.views.get(this.activeId);
+    if (!entry || entry.view.webContents.isDestroyed()) {
+      return { ok: false, reason: 'view-not-loaded' };
+    }
+
+    try {
+      const data = await entry.view.webContents.executeJavaScript(CONVERSATION_EXTRACT_SCRIPT, false);
+      return {
+        ok: true,
+        modelId: this.activeId,
+        modelName: entry.model.name,
+        ...data,
+      };
+    } catch (error) {
+      debugError(`[${entry.model.name}] conversation export failed`, error);
+      return {
+        ok: false,
+        reason: 'extract-failed',
+        message: error && error.message ? error.message : String(error),
+      };
     }
   }
 
