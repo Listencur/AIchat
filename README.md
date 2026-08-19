@@ -104,7 +104,7 @@ List endpoints return `[]` on failure (and `{ ok: false, reason }` via the wrapp
 ### Install and launch
 
 ```bash
-git clone https://github.com/zhiqian/AIchat.git
+git clone https://github.com/Listencur/AIchat.git
 cd AIchat
 npm install
 npm start
