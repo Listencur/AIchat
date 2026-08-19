@@ -1,60 +1,95 @@
 # AIchat
 
 [![Electron](https://img.shields.io/badge/Electron-42-47848F?logo=electron)](https://www.electronjs.org/)
-[![Node](https://img.shields.io/badge/Node-%E2%89%A518-green?logo=node.js)](https://nodejs.org)
 [![Tests](https://img.shields.io/badge/Tests-270%20passing-brightgreen)](./test)
 [![License](https://img.shields.io/badge/License-MIT-blue)](./LICENSE)
+[![Release](https://img.shields.io/badge/Release-v1.0.0-blue)](https://github.com/Listencur/AIchat/releases/tag/v1.0.0)
 
-A multi-model AI chat aggregator built with Electron. One desktop window hosts multiple AI websites in independent sessions; switch instantly, compare responses side by side, and keep each site's login state isolated.
+> 一个 Electron 桌面窗口聚合多个 AI 网站。**独立会话、一键切换、分屏对比、快速提问**。
 
----
-
-## Table of Contents
-
-1. [What is AIchat?](#what-is-aichat)
-2. [Features](#features)
-3. [Architecture](#architecture)
-4. [Quick Start](#quick-start)
-5. [Configuration](#configuration)
-6. [Usage](#usage)
-7. [Build & Release](#build--release)
-8. [Testing](#testing)
-9. [Privacy](#privacy)
-10. [Project Structure](#project-structure)
-11. [Extending](#extending)
-12. [Troubleshooting](#troubleshooting)
-13. [Contributing](#contributing)
-14. [License](#license)
+[下载 v1.0.0](https://github.com/Listencur/AIchat/releases/tag/v1.0.0) · [查看截图](#截图展示) · [架构说明](#架构概览)
 
 ---
 
-## What is AIchat?
+## 这是什么？
 
-AIchat is a single Electron application that opens **multiple AI websites inside one window**. Each site runs in its own `WebContentsView` with a dedicated Electron session, so its cookies, localStorage and IndexedDB never leak into the others. The sidebar lists your added models; click one and the view swaps in. A separate *Quick Ask* window can fire the same prompt at several models at once and return per-model results keyed by `modelId`.
+AIchat 是一个 **Electron 桌面应用**，把多个 AI 网站（ChatGPT、Gemini、DeepSeek、千问、Grok 等）放到一个窗口里。每个网站都在自己独立的 Electron `Session` 中运行 —— **Cookie、LocalStorage、IndexedDB 完全隔离**，互不干扰。
 
-The app is a long-running companion tool, not a one-shot client. It is built for users who routinely use more than one AI site and want a stable desktop wrapper instead of juggling tabs.
-
----
-
-## Features
-
-- **Multi-site aggregation** - ChatGPT, Gemini, DeepSeek, Qwen, Grok and any other URL through the *generic-fill* adapter
-- **Independent sessions** - each model has its own `persist:` partition; logging out of one does not affect the others
-- **Quick Ask window** - send one prompt to several models in parallel; results returned by `modelId`
-- **Split view** - 2 or 3 way comparison with adjustable ratios
-- **Memory control** - LRU eviction, idle reclaim after a configurable timeout, hard cap on alive views, active/split/busy views are never auto-reclaimed
-- **Model deletion cleanup** - removes partition data, cookies, cache, IndexedDB, localStorage and service workers for that model only
-- **Stable IPC** - every channel returns `{ ok: true, data }` or `{ ok: false, reason, message? }`
-- **Conservative adapter fallback** - unrecognised sites only fill the prompt and never simulate Enter
-- **Atomic state writes** - debounced, revision-tracked persistence through `StateStore`
-- **270 unit and integration tests** - `node:test` based, no real account or cookie data used
+适合每天都要和多个 AI 打交道的用户：不用在 5 个标签页之间来回切换，也不会出现「在 A 网站登出导致 B 网站的会话失效」的尴尬。
 
 ---
 
-## Architecture
+## 主要功能
+
+### 1️⃣ 一窗口多 AI，侧边栏一键切换
+
+![暗黑主题](docs/images/main-window-dark.png)
+![明亮主题](docs/images/main-window-white.png)
+
+**同一个窗口，主题任选** —— 暗黑适合长时间编码，明亮适合白天办公。左侧是模型列表，点击切换激活的网页。中间显示当前选中 AI 的完整网页界面，保留各家网站的全部原生能力（富文本、图片、代码高亮、文件上传、插件等）。
+
+- 支持 **DeepSeek / Gemini / ChatGPT / Grok / 千问** 等已适配站点
+- 任意其他 URL 可通过 **通用降级（generic-fill）** 加载 —— 只填入 prompt，不会自动按 Enter
+- 会话独立：一个模型登出不影响其他模型
+
+### 2️⃣ 分屏对比，2-3 路同时看
+
+![分屏对比](docs/images/split-view.png)
+
+需要对比两个 AI 的回答？点底部的 **「分屏」**，再加一个模型就能左右对照。比例可拖拽调整。
+
+- 多个模型同时活跃，回复独立显示
+- 适合「同一个问题，让 A 和 B 各答一遍看差异」
+- 支持横向 / 纵向布局
+
+### 3️⃣ 快速提问窗口，全局热键秒呼
+
+![快速提问](docs/images/quick-ask.png)
+
+**任意位置** 按 `Ctrl + Shift + Space`（可自定义）召唤出独立的小窗：
+
+- 在不打断当前 AI 对话的前提下快速发问
+- 选择目标模型（一个或多个）
+- 输入框提示 `Enter 提交，Shift+Enter 换行`
+- 提交后自动隐藏，结果回到主窗口
+
+### 4️⃣ 设置窗口：内存 / 常规 / 数据 / 快捷键 / 网络
+
+设置窗口按 5 个分类组织，左侧导航，右侧详情。即使窗口不够高也只滚动右侧，分类不会跑掉。
+
+#### 内存设置
+![内存设置](docs/images/settings-memory.png)
+
+- **托盘时**：保持全部页面 / 仅保留激活 / 释放所有
+- **最大保活页数**：超出后释放最久未用的后台页（登录态保留）
+- **内存过高时结束后台**：达到阈值后每 30 秒检查一次
+- **闲置页面自动释放**：仅非当前、非分屏、非忙碌的页面会被回收
+
+#### 常规设置
+![常规设置](docs/images/settings-general.png)
+
+- **启动时恢复上次会话**（仅恢复活跃模型，分屏会先询问）
+- **关闭窗口时**：每次询问 / 最小化到托盘 / 直接退出
+
+#### 快捷键
+
+- **启用全局快捷键**：任意位置唤起快速提问（无图，见下方说明）
+- **组合键**：默认 `Ctrl + Shift + Space`，可自定义
+
+#### 数据
+![数据](docs/images/settings-data.png)
+
+- **清除缓存**：清除 HTTP 缓存、Cache Storage、代码缓存、可清理的 DNS 缓存 —— **保留 Cookie / LocalStorage / IndexedDB / 登录态**
+- **清除登录状态**：清除所有模型的登录存储，并结束现有 View，所有模型都要重新登录
+
+> ⚠️ 这两个按钮在 `保存` 之后才会生效，操作期间按钮禁用避免误触。
+
+---
+
+## 核心架构概览
 
 ```
-electron/  Main process  (lifecycle, IPC, sessions, persistence)
+electron/  主进程（生命周期、IPC、Session、持久化）
    |
    +-- model-store / session-manager / group-store
    +-- snapshot-service / memory-manager
@@ -62,82 +97,64 @@ electron/  Main process  (lifecycle, IPC, sessions, persistence)
         +-- view-lifecycle / view-layout / view-reclaimer
         +-- prompt-injector
    +-- ipc-guard / state-store / model-policy
-   +-- site-adapters/  Per-site adapter registry
-
-src/       Renderer      (sidebar UI, quick ask window, settings window)
-test/      Unit tests    (node:test)
-data/      User data     (models.json lives here, not tracked)
+   +-- site-adapters/  站点适配器注册表
+src/       渲染进程（侧边栏、快速提问、设置）
+test/      单元测试（node:test，270 项）
+data/      用户数据（models.json 不入库）
 ```
 
-The main process is intentionally split into small focused modules. `view-manager.js` is now a thin facade that re-exports the four lifecycle, layout, reclaimer and prompt-injector modules.
+### 关键不变量
 
-### Key invariants
+- **active / split / busy 视图永远不会被自动回收**
+- 已销毁的 `WebContents` 再次 `executeJavaScript` 会直接被拒绝，快速提问目标已删除模型时返回 `{ ok: false, reason: 'view-not-loaded' }`
+- `ensureView(modelId)` 同一模型同时只能有一个创建 Promise
+- 删除模型：清理 partition、cookies、IndexedDB、localStorage、service workers、cache storage、WebSQL、auth cache、磁盘目录 —— 失败有日志，绝不留下半删状态
 
-- An **active** view is never reclaimed by the LRU/idle reclaimer.
-- A **split** view is never reclaimed.
-- A **busy** view (a submission is in flight) is never reclaimed.
-- A **destroyed** `WebContents` rejects any further `executeJavaScript` call; quick-ask targeting such a view returns `{ ok: false, reason: 'view-not-loaded' }` instead of crashing.
-- `ensureView(modelId)` only runs one creation Promise at a time per model.
-- `removeView` clears `splitIds`, `activeId` and any `busyReason` for that model.
+### IPC 契约（统一）
 
-### IPC contract
-
-All renderer-facing IPC handlers return:
-
-```js
-{ ok: true, data: <payload> }   // success
-{ ok: false, reason: 'code', message?: 'human readable' }   // failure
-```
-
-List endpoints return `[]` on failure (and `{ ok: false, reason }` via the wrapper). Status-shaped endpoints return a complete empty status object on failure. Boolean commands return `{ ok, reason }` only.
+| 情况 | 返回格式 |
+|---|---|
+| 成功 | `{ ok: true, data }` 或明确业务对象 |
+| 失败 | `{ ok: false, reason, message? }` |
+| 列表接口失败 | `[]` |
+| 状态接口失败 | 完整空结构 |
+| 布尔命令失败 | `{ ok: false, reason }` |
 
 ---
 
-## Quick Start
+## 快速开始
 
-### Prerequisites
+### 下载安装
 
-- Node.js 18 or later
-- Windows 10/11 (primary target), macOS or Linux should also work
-- npm (bundled with Node)
+前往 [Releases](https://github.com/Listencur/AIchat/releases/tag/v1.0.0) 下载 `AIchat-1.0.0-portable.exe`（约 89 MB，单文件便携版）。
 
-### Install and launch
+### 从源码运行
 
 ```bash
 git clone https://github.com/Listencur/AIchat.git
 cd AIchat
 npm install
-npm start
+npm start          # 启动
+npm run dev        # 启动并打开 DevTools
+npm test           # 运行 270 项测试
 ```
 
-The window opens at 1200 x 800 with the default model list from `data/models.example.json`. Copy that file to `data/models.json` the first time if you want to edit it locally:
+### 系统要求
 
-```bash
-# Linux / macOS / Git Bash
-cp data/models.example.json data/models.json
+- Windows 10/11 x64
+- [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)（Electron 42 依赖）
 
-# PowerShell
-Copy-Item data/models.example.json data/models.json
-```
+### 首次使用
 
-`data/models.json` is in `.gitignore`, so your edits stay local.
-
-### Other launch modes
-
-```bash
-npm run dev          # Same as start, but the BrowserWindow opens with DevTools
-npm test             # Run the node:test suite (no Electron required)
-npm run dist:portable    # Build a portable Windows .exe via electron-builder
-npm run build:launcher   # Rebuild the AiChat.exe launcher wrapper
-```
+1. 把 `data/models.example.json` 复制为 `data/models.json` 预置模型（如不需要新增模型可跳过）
+2. 在 **设置 -> 数据** 中添加自己的模型（或编辑 `models.json`）
+3. 在每个 AI 网站完成登录（独立会话，一次登录长期保留）
 
 ---
 
-## Configuration
+## 配置说明
 
 ### `data/models.json`
-
-The model list lives in this file. It is created on first launch if absent. Any field you add must still parse through the JSON loader (no required schema migrations today).
 
 ```json
 {
@@ -150,345 +167,194 @@ The model list lives in this file. It is created on first launch if absent. Any 
       "icon": "💬",
       "color": "#10a37f",
       "partition": "persist:chatgpt"
-    },
-    {
-      "id": "gemini",
-      "name": "Gemini",
-      "url": "https://gemini.google.com",
-      "icon": "✨",
-      "color": "#4285f4",
-      "partition": "persist:gemini"
     }
   ]
 }
 ```
 
-Field notes:
-
-| Field | Required | Notes |
+| 字段 | 必填 | 说明 |
 |---|---|---|
-| `id` | yes | Unique within the file. The Electron partition is derived from `id` (see `electron/model-policy.js`). |
-| `name` | yes | Display name in the sidebar. |
-| `url` | yes | Starting URL for the view. Must be HTTPS for production sites; local file/http URLs are allowed for testing. |
-| `icon` | no | Emoji or short string. Rendered in the sidebar chip. |
-| `color` | no | CSS color string used for the sidebar accent. |
-| `partition` | no | Override the derived Electron partition. Most users do not need this. |
+| `id` | ✅ | 唯一。Electron partition 从 `id` 派生 |
+| `name` | ✅ | 侧边栏显示名 |
+| `url` | ✅ | 起始 URL |
+| `icon` | ❌ | emoji 或字符串，侧边栏图标 |
+| `color` | ❌ | CSS 颜色，侧边栏主色 |
+| `partition` | ❌ | 覆盖派生的 Electron partition |
 
-### Adding a model at runtime
+### 启动参数
 
-The settings window has an *Add model* form that posts through the `models:add` IPC channel. The same channel is exposed to any renderer; the form is just a UI surface.
-
-### Settings window
-
-Left navigation:
-
-1. **General** - launch behaviour, theme
-2. **Memory** - idle reclaim minutes, max alive count, dropdown defaults
-3. **Data** - clear cache, clear login state, delete model
-4. **Shortcuts** - global hotkeys
-5. **Network** - proxy on/off, proxy URL
-
-Right panel scrolls independently of the dialog when content exceeds available height.
+| 参数 | 说明 |
+|---|---|
+| `--dev` | 打开 DevTools |
 
 ---
 
-## Usage
+## 进阶：扩展
 
-### Switching models
+### 添加新站点适配器
 
-Click any sidebar chip. The active view is replaced by the selected model's view. Switching ten times in a row does not create duplicate views, because `ensureView(modelId)` deduplicates in-flight creation Promises.
-
-### Quick Ask
-
-Open the Quick Ask window (shortcut). Type a prompt, tick the target models, press **Send**. Each model returns a result:
+1. 在 `electron/site-adapters/<name>.js` 写一个 adapter：
 
 ```js
-{
-  "chatgpt": { ok: true, reason: 'submitted' },
-  "gemini":  { ok: false, reason: 'requiresManualSend', requiresManualSend: true },
-  "deepseek":{ ok: true, reason: 'submitted' }
+const ADAPTER_ID = 'my-site';
+function matches(url) {
+  return typeof url === 'string' && url.includes('mysite.example');
 }
+module.exports = {
+  id: ADAPTER_ID,
+  matches,
+  prompt: {
+    inputSelectors: ['textarea[aria-label="Ask"]'],
+    sendSelectors:  ['button[aria-label="Send"]'],
+    inputStrategy:  'native-value',
+    sendStrategy:   'click',
+  },
+  capabilities: { canAutoSend: true, canFillPrompt: true },
+};
 ```
 
-If a model is not in the registry it uses *generic-fill*: the prompt is inserted, but **Enter is never simulated**. A visible banner reminds you to press Enter yourself.
+2. 在 `electron/site-adapters/registry.js` 注册。
+3. 在 `test/site-adapters.test.js` 加测试。
+4. `npm test && npm start` 验证。
 
-### Split view
+### 添加新 IPC 通道
 
-Click *Split* in the sidebar, then pick up to two more models. Drag the divider to change ratios. Ratios persist per session through `group-store`. **Only split models may be auto-reclaimed after the session ends.**
+1. 在对应模块实现 handler（不要堆在 `main.js`）
+2. 在 `electron/preload.js` 暴露
+3. 在 `test/ipc-contract.test.js` 文档化返回形状
+4. `npm test`
 
-### Removing a model
+### 添加新模块
 
-Settings -> Data -> *Delete model*. The deletion pipeline:
-
-1. Removes the model from `models.json`
-2. Removes it from `groups`
-3. Removes it from the snapshot cache
-4. Removes it from quick-ask history
-5. Destroys any active or split `WebContentsView`
-6. Clears cookies, filesystem, IndexedDB, localStorage, service workers, cache storage, WebSQL, auth cache
-7. Removes the partition directory under `userData/Partitions`
-8. Deletes the model's copied local icon, if any
-9. Returns `{ ok, modelId, partition, sessionCleared, diskRemoved }`
-
-Failures are logged, do not crash the app, and never leave the partition half-deleted without a trace.
-
-### Memory control
-
-Watchdog reads the current memory snapshot every N seconds and:
-
-- **Idle reclaim**: views that have been inactive for longer than the configured threshold are reclaimed, **unless** they are active, split, busy, or in the protected set.
-- **Max alive**: if the alive count exceeds the configured cap, the oldest non-protected view is reclaimed.
-- **Max alive = 0** disables the cap.
-- **Default idle threshold**: 30 minutes. **Default behaviour**: keep alive whenever possible.
-
-Reclaim notifications are sent via `memory:reclaimNotice` to the renderer so the sidebar can update the icon without polling.
+- 使用依赖注入传入 `app / session / fs / path`
+- 不直接调用 `mainWindow.webContents.send`，返回值由 `main.js` 统一通知 renderer
+- 必须配套一个 `test/<module>.test.js`
 
 ---
 
-## Build & Release
-
-### Pre-release checklist
-
-```bash
-npm test
-node --check electron/main.js
-node --check electron/view-manager.js
-node --check electron/preload.js
-node --check src/js/renderer.js
-node --check src/js/quick.js
-node --check src/js/settings.js
-npm run dist:portable
-```
-
-Windows users can run `scripts/verify.ps1` instead.
-
-### Building a portable Windows build
-
-```bash
-npm run build:launcher   # Produces AiChat.exe launcher
-npm run dist:portable    # Produces <productName>-<version>-portable.exe
-```
-
-Configuration lives in `package.json -> build` (electron-builder). Output directory defaults to `../AI聊天聚合打包版`; change it there if needed.
-
-### What is in a release
-
-- The Electron app bundle (main process + renderer + assets)
-- A portable single-file .exe wrapper
-- No telemetry, no auto-update channel
-
-### What is NOT in a release
-
-- `node_modules/`
-- `*.exe` source builds (`AiChat.exe` is git-ignored)
-- `data/models.json` (per user)
-- Chat history files
-- Anything under `userData/Partitions`
-
----
-
-## Testing
+## 测试
 
 ```bash
 npm test
 ```
 
-Tests use `node:test` and run under a plain Node process - no Electron required.
-
-| File | Covers |
+| 测试文件 | 覆盖范围 |
 |---|---|
-| `test/ipc-contract.test.js` | Every IPC channel's success/failure shape |
-| `test/ipc-guard.test.js` | Sender validation |
-| `test/state-store.test.js` | Atomic debounced writes |
-| `test/model-store.test.js` | Model CRUD |
-| `test/session-manager.test.js` | Partition cleanup, session lifecycle |
-| `test/group-store.test.js` | Group CRUD |
-| `test/snapshot-service.test.js` | Snapshot persistence, origin check |
-| `test/memory-manager.test.js` | Watchdog + reclaim |
+| `test/ipc-contract.test.js` | 每个 IPC 通道的成败格式 |
+| `test/state-store.test.js` | 原子写入 + 防抖 |
+| `test/model-store.test.js` | 模型 CRUD |
+| `test/session-manager.test.js` | partition 清理、会话生命周期 |
+| `test/group-store.test.js` | 分组 CRUD |
+| `test/snapshot-service.test.js` | 快照持久化、同源校验 |
+| `test/memory-manager.test.js` | watchdog + 回收通知 |
 | `test/view-lifecycle.test.js` | ensure/destroy/busy/ready |
-| `test/view-layout.test.js` | Split/single bounds + ratios |
-| `test/prompt-injector.test.js` | Prompt fill + send strategies |
-| `test/view-reclaimer.test.js` | LRU + idle + protected |
-| `test/site-adapters.test.js` | Per-site adapter matching |
-| `test/settings-normalize.test.js` | Settings schema + migration |
-| `test/integration.test.js` | Cross-module flows with mocks |
-| `test/phase2-concurrency.test.js` | Quick ask concurrency + busy protection |
+| `test/view-layout.test.js` | 单/分屏 bounds + 比例 |
+| `test/prompt-injector.test.js` | prompt 注入 + 发送策略 |
+| `test/view-reclaimer.test.js` | LRU + 闲置 + 保护 ID |
+| `test/site-adapters.test.js` | 各站点适配器匹配 |
+| `test/settings-normalize.test.js` | 设置架构 + 迁移 |
+| `test/integration.test.js` | 跨模块流程 |
+| `test/phase2-concurrency.test.js` | 快速提问并发 + busy 保护 |
 
-270 tests in total. **No test uses a real account, real cookie, or real partition.**
+**共 270 项测试**，全部通过。**无任何测试使用真实账号、Cookie 或 partition**。
 
 ---
 
-## Privacy
+## 隐私
 
-This repository contains **no personal data**:
+**本仓库不包含任何个人数据**。
 
-| Category | Excluded via |
+| 类别 | 排除方式 |
 |---|---|
-| Chat history | `会话记录*/`, `聊天记录*/` |
-| User model list | `data/models.json` (a `.example.json` is committed instead) |
-| Build outputs | `*.exe`, `dist/`, `build/` |
-| Dependencies | `node_modules/` |
-| Logs | `*.log`, `error.log` |
-| Editor state | `.vscode/`, `.idea/`, `.DS_Store`, `Thumbs.db` |
-| Internal plans | `.opencode/` |
+| 对话记录 | `会话记录*/`, `聊天记录*/` |
+| 用户模型列表 | `data/models.json`（提交 `data/models.example.json` 作为模板） |
+| 构建产物 | `*.exe`, `dist/`, `build/` |
+| 依赖 | `node_modules/` |
+| 日志 | `*.log`, `error.log` |
+| 编辑器状态 | `.vscode/`, `.idea/`, `.DS_Store`, `Thumbs.db` |
+| 内部计划 | `.opencode/` |
 
-The Electron `userData` directory holds partition data per model. That directory **never** gets committed.
+Electron `userData` 目录按模型存放 partition 数据 —— **永远不会被提交**。
 
 ---
 
-## Project Structure
+## 故障排除
+
+### 切换模型后页面一片白
+分区 session 被清空过。在 **设置 -> 数据 -> 清除登录状态**（或重新登录）即可。
+
+### 启动报错 `require failed: electron`
+在非 Electron 上下文执行了脚本。运行时用 `npm start`，测试用 `npm test`。
+
+### 便携版在别的机器上启动失败
+目标机器大概率需要 [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)。
+
+### `git pull` 后 `data/models.json` 没了
+那是预期行为 —— 该文件在 `.gitignore` 中。从 `data/models.example.json` 恢复。
+
+### 某个站点突然坏掉（DOM 改版）
+更新 `electron/site-adapters/<site>.js` 里的 `inputSelectors` / `sendSelectors`。如果不确定，**降到 generic-fill** —— 只填入 prompt，不自动按 Enter。
+
+---
+
+## 贡献
+
+欢迎 PR。在动手之前：
+
+1. `npm test` 确保 270 项全过
+2. 改过的文件都要过 `node --check`
+3. Windows 下跑一遍 `scripts/verify.ps1`
+4. 新代码必须有测试覆盖 —— 没有测试的公开函数是高风险回归点
+5. 不要提交真实 cookie / 对话记录
+
+站点 selector 不稳定时优先用 `generic-fill` 而不是写死 selector。**除非 adapter 明确声明 `canAutoSend: true`，主进程永远不模拟 Enter**。
+
+---
+
+## 项目结构
 
 ```
 .
-|-- electron/
-|   |-- main.js                  App lifecycle, IPC handlers (~925 LoC)
-|   |-- preload.js               contextBridge IPC surface
-|   |-- model-store.js           Model CRUD, ID generation, icon handling
-|   |-- session-manager.js       Partition + cleanup
-|   |-- group-store.js           Group CRUD
-|   |-- snapshot-service.js      Snapshot persistence + origin checks
-|   |-- memory-manager.js        Watchdog + reclaim notifications
-|   |-- view-manager.js          Facade (delegates below)
-|   |-- view-lifecycle.js        ensure/create/destroy/busy/ready
-|   |-- view-layout.js           bounds + ratios + sidebar state
-|   |-- prompt-injector.js       fill + send strategies
-|   |-- view-reclaimer.js        LRU + idle + protected IDs
-|   |-- ipc-guard.js             Sender validation
-|   |-- state-store.js           Atomic debounced writes
-|   |-- model-policy.js          Partition derivation, capability checks
-|   |-- settings-normalize.js    Settings defaults + migration
-|   |-- session-header-hooks.js  Optional header injection for managed sessions
-|   |-- site-adapters.js         Adapter facade
+|-- electron/                  主进程（已模块化）
+|   |-- main.js                IPC handlers（~925 行）
+|   |-- view-manager.js        facade
+|   |-- view-lifecycle.js
+|   |-- view-layout.js
+|   |-- view-reclaimer.js
+|   |-- prompt-injector.js
+|   |-- model-store.js
+|   |-- session-manager.js
+|   |-- snapshot-service.js
+|   |-- memory-manager.js
+|   |-- group-store.js
+|   |-- ipc-guard.js
+|   |-- state-store.js
+|   |-- model-policy.js
+|   |-- settings-normalize.js
 |   \-- site-adapters/
 |       |-- registry.js
-|       |-- chatgpt.js
-|       |-- deepseek.js
-|       |-- gemini.js
-|       |-- qwen.js
-|       |-- grok.js
+|       |-- chatgpt.js / deepseek.js / gemini.js / qwen.js / grok.js
 |       \-- generic-fill.js
 |
-|-- src/
-|   |-- index.html               Sidebar UI host
-|   |-- quick.html               Quick Ask window
-|   |-- settings.html            Settings window
-|   |-- css/
-|   \-- js/
-|
-|-- test/                        node:test suites
-|-- scripts/verify.ps1           Pre-release verification (Windows)
-|-- data/models.example.json     Template for your local models.json
-|-- assets/app-icon.svg
-|-- assets/app-icon.ico
-|-- assets/app-icon.png
+|-- src/                       渲染端（侧边栏、快速提问、设置）
+|-- test/                      270 项 node:test
+|-- scripts/verify.ps1         发布前验证（Windows）
+|-- docs/images/               README 截图
+|-- data/models.example.json
+|-- assets/                    图标资源
 |-- package.json
-|-- README.md                    (this file)
-|-- LICENSE                      MIT
-\-- .gitignore
+|-- LICENSE                    MIT
+\-- README.md                  本文件
 ```
 
 ---
 
-## Extending
+## 致谢
 
-### Add a new site adapter
-
-1. Create `electron/site-adapters/<name>.js`:
-
-   ```js
-   'use strict';
-   const ADAPTER_ID = 'my-site';
-
-   function matches(url) {
-     return typeof url === 'string' && url.includes('mysite.example');
-   }
-
-   const myAdapter = {
-     id: ADAPTER_ID,
-     matches,
-     prompt: {
-       inputSelectors: ['textarea[aria-label="Ask"]'],
-       sendSelectors:  ['button[aria-label="Send"]'],
-       inputStrategy:  'native-value',
-       sendStrategy:   'click',
-     },
-     page: {
-       readySelectors:   ['div[data-test-id="conversation"]'],
-       loadingSelectors: ['div[data-loading="true"]'],
-     },
-     capabilities: {
-       canAutoSend:  true,
-       canFillPrompt: true,
-     },
-   };
-
-   module.exports = myAdapter;
-   ```
-
-2. Register it in `electron/site-adapters/registry.js`:
-
-   ```js
-   const myAdapter = require('./my-site');
-   adapters.push(myAdapter);
-   ```
-
-3. Add a unit test in `test/site-adapters.test.js` covering `matches()` for real and near-miss URLs.
-
-4. Run `npm test` and `npm start` against the new site.
-
-### Add a new IPC channel
-
-1. Implement the handler in the relevant module (do not bloat `main.js`).
-2. Expose it in `electron/preload.js`.
-3. Document the success and failure shapes in `test/ipc-contract.test.js`.
-4. Run `npm test`.
-
-### Add a new module
-
-- Use dependency injection for `app`, `session`, `fs`, `path`.
-- Do not call `mainWindow.webContents.send` directly - return a value and let `main.js` notify the renderer.
-- Add a `test/<module>.test.js` covering every public function.
-
----
-
-## Troubleshooting
-
-### The view stays white after switching models
-
-The site's frontend may have lost its session because the partition was cleared. Check Settings -> Data -> *Clear login state* and re-login manually.
-
-### `require failed: electron`
-
-You ran a script outside an Electron context. Use `npm start` for runtime code, `npm test` for tests.
-
-### The portable build does not start on another machine
-
-The target machine likely needs the [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist) that Electron 42 links against.
-
-### `data/models.json` disappeared after `git pull`
-
-That file is intentionally git-ignored. Restore it from `data/models.example.json` and re-add your models.
-
-### A site breaks after the site's frontend changes
-
-Adapters live in `electron/site-adapters/`. Update the `inputSelectors`/`sendSelectors` and bump the version comment in the file. Run the local smoke test (login -> fill prompt -> submit) before committing.
-
----
-
-## Contributing
-
-Issues and PRs are welcome. Before opening one:
-
-1. Run `npm test` and confirm 270 passing.
-2. Run `node --check` on every file you touch.
-3. Run `scripts/verify.ps1` on Windows.
-4. Add tests for any new code path. Public functions without tests are a regression risk.
-5. Do not commit secrets, real cookies, or chat history.
-
-For site adapter changes, prefer *generic-fill* over hard-coded selectors if a site's DOM is unstable. The app must never simulate Enter unless an adapter explicitly opts in via `capabilities.canAutoSend`.
+由 v1.0.0 发布构建。详细变更历史参见 [commits](https://github.com/Listencur/AIchat/commits/master)。
 
 ---
 
 ## License
 
-MIT - see [LICENSE](./LICENSE).
+[MIT](./LICENSE)
