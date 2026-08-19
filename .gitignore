@@ -41,6 +41,8 @@ Thumbs.db
 # OpenCode plans (session internal)
 .opencode/
 
-# Personal data backup (not for repo)
-.git-personal-data-backup/
+# Personal notes (keep local, not for repo)
+项目计划表.md
+*计划表.md
+*.local.*
 
