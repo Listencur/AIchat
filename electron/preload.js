@@ -68,9 +68,6 @@ contextBridge.exposeInMainWorld('api', {
     /** 获取模型状态面板数据 */
     getStatus: () => ipcRenderer.invoke('view:getStatus'),
 
-    /** 导出当前对话为 Markdown */
-    exportConversation: () => ipcRenderer.invoke('view:exportConversation'),
-
     /** 结束指定模型的 WebView，释放内存 */
     close: (id) => ipcRenderer.invoke('view:close', id),
 
@@ -118,6 +115,19 @@ contextBridge.exposeInMainWorld('api', {
       const handler = (_event, data) => callback(data);
       ipcRenderer.on('view:closed', handler);
       return () => ipcRenderer.removeListener('view:closed', handler);
+    },
+  },
+
+  // ── 内存 ──
+  memory: {
+    /** 获取应用内存摘要 */
+    getSummary: () => ipcRenderer.invoke('memory:getSummary'),
+
+    /** 内存压力自动回收后通知 */
+    onReclaimed: (callback) => {
+      const handler = (_event, data) => callback(data);
+      ipcRenderer.on('memory:reclaimed', handler);
+      return () => ipcRenderer.removeListener('memory:reclaimed', handler);
     },
   },
 

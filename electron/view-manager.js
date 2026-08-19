@@ -1,12 +1,12 @@
 'use strict';
 
 const { WebContentsView } = require('electron');
+const { installSessionHeaderHook } = require('./session-header-hooks');
+const { getPersistPartition, isSameModelOrigin } = require('./model-policy');
+const { resolveSiteAdapter } = require('./site-adapters');
 
-// ⚠️ 此值必须与 src/css/style.css 中 --sidebar-width 保持一致
 const SIDEBAR_WIDTH = 240;
-// ⚠️ 此值必须与 src/css/style.css 中 --sidebar-collapsed-width 保持一致
 const SIDEBAR_COLLAPSED_WIDTH = 56;
-// ⚠️ 此值必须与 src/css/style.css 中 --top-bar-height 保持一致
 const TOP_BAR_HEIGHT = 36;
 const SPLIT_GUTTER_WIDTH = 10;
 const DARK_LOADING_BACKGROUND = '#181818';
@@ -14,107 +14,20 @@ const LIGHT_LOADING_BACKGROUND = '#ffffff';
 const DEBUG = process.argv.includes('--dev');
 const PROMPT_SUBMIT_TIMEOUT_MS = 12000;
 const PROMPT_INTERACTIVE_TIMEOUT_MS = 8000;
-const CONVERSATION_EXTRACT_SCRIPT = `
-(async () => {
-  const normalize = (text) => String(text || '')
-    .replace(/\\r/g, '')
-    .replace(/[\\t\\f\\v]+/g, ' ')
-    .replace(/[ \\u00a0]+\\n/g, '\\n')
-    .replace(/\\n[ \\u00a0]+/g, '\\n')
-    .replace(/\\n{3,}/g, '\\n\\n')
-    .trim();
 
-  const textFromElement = (element) => {
-    const clone = element.cloneNode(true);
-    clone.querySelectorAll('script, style, noscript, svg, button, nav, header, footer, [aria-hidden="true"]').forEach((node) => node.remove());
-    clone.querySelectorAll('pre').forEach((pre) => {
-      const code = normalize(pre.innerText || pre.textContent);
-      const replacement = document.createElement('div');
-      const fence = String.fromCharCode(96, 96, 96);
-      replacement.textContent = code ? '\\n\\n' + fence + '\\n' + code + '\\n' + fence + '\\n\\n' : '';
-      pre.replaceWith(replacement);
-    });
-    return normalize(clone.innerText || clone.textContent);
-  };
 
-  const roleLabel = (role) => {
-    const value = String(role || '').toLowerCase();
-    if (value.includes('user') || value.includes('human') || value.includes('query')) return '用户';
-    if (value.includes('assistant') || value.includes('model') || value.includes('bot') || value.includes('ai')) return 'AI';
-    return '';
-  };
-
-  const title = normalize(document.title) || '未命名对话';
-  const url = location.href;
-  const main = document.querySelector('main, [role="main"], article') || document.body;
-  const messages = [];
-  const seen = new Set();
-
-  const pushMessage = (role, element) => {
-    if (!element || seen.has(element)) return;
-    const content = textFromElement(element);
-    if (!content || content.length < 2) return;
-    seen.add(element);
-    messages.push({
-      role: roleLabel(role) || '内容',
-      content,
-    });
-  };
-
-  document.querySelectorAll('[data-message-author-role]').forEach((element) => {
-    pushMessage(element.getAttribute('data-message-author-role'), element);
-  });
-
-  if (messages.length === 0) {
-    const selector = [
-      'user-query',
-      'model-response',
-      'message-content',
-      '[data-test-id*="user" i]',
-      '[data-test-id*="response" i]',
-      '[class*="user-query" i]',
-      '[class*="model-response" i]',
-      '[class*="assistant" i]',
-      '[class*="message" i]'
-    ].join(',');
-
-    Array.from(main.querySelectorAll(selector))
-      .filter((element) => !element.querySelector(selector))
-      .forEach((element) => {
-        const descriptor = [
-          element.tagName,
-          element.getAttribute('data-test-id'),
-          element.className,
-          element.getAttribute('aria-label')
-        ].join(' ');
-        pushMessage(descriptor, element);
-      });
-  }
-
-  if (messages.length > 0) {
-    const compact = [];
-    const textSeen = new Set();
-    messages.forEach((message) => {
-      const key = message.role + '\\n' + message.content;
-      if (textSeen.has(key)) return;
-      textSeen.add(key);
-      compact.push(message);
-    });
-    return { title, url, messages: compact };
-  }
-
-  const text = textFromElement(main);
-  return { title, url, messages: [], text };
-})();
-`;
-
-function buildPromptSubmitScript(prompt) {
+function buildPromptSubmitScript(prompt, allowSend = true, adapterSpec = {}) {
   const serializedPrompt = JSON.stringify(prompt);
+  const serializedAllowSend = allowSend === true ? 'true' : 'false';
+  const serializedSpec = JSON.stringify(adapterSpec || {});
 
   return `
 (async () => {
   const prompt = ${serializedPrompt};
+  const allowSend = ${serializedAllowSend};
+  const adapterSpec = ${serializedSpec};
   const normalize = (value) => String(value || '').toLowerCase();
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const isVisible = (element) => {
     if (!element) return false;
     const rect = element.getBoundingClientRect();
@@ -122,41 +35,47 @@ function buildPromptSubmitScript(prompt) {
     return rect.width > 8 && rect.height > 8 && style.visibility !== 'hidden' && style.display !== 'none';
   };
   const selectors = [
-    'textarea:not([disabled])',
+    ...((adapterSpec.prompt && adapterSpec.prompt.inputSelectors) || []),
     'div#prompt-textarea[contenteditable="true"]',
     '[data-testid="prompt-textarea"]',
+    '[data-testid*="composer-input" i]',
+    '[data-testid*="prompt" i][contenteditable="true"]',
     'rich-textarea [contenteditable="true"]',
+    '.ProseMirror[contenteditable="true"]',
     '[contenteditable="true"][role="textbox"]',
+    'textarea:not([disabled])',
     '[contenteditable="true"]',
     '[role="textbox"]'
   ];
-  const inputs = selectors
-    .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
-    .filter((element, index, list) => list.indexOf(element) === index)
-    .filter(isVisible);
-  const input = inputs.find((element) => {
-    const label = normalize([
-      element.id,
-      element.className,
-      element.getAttribute('aria-label'),
-      element.getAttribute('placeholder'),
-      element.getAttribute('data-testid')
-    ].join(' '));
-    return label.includes('prompt') || label.includes('message') || label.includes('输入') || label.includes('提问') || label.includes('ask') || label.includes('query');
-  }) || inputs[0];
-
-  if (!input) {
-    return { ok: false, reason: 'input-not-found' };
-  }
-
+  const findInput = () => {
+    const inputs = selectors
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((element, index, list) => list.indexOf(element) === index)
+      .filter(isVisible);
+    const named = inputs.find((element) => {
+      const label = normalize([
+        element.id, element.className,
+        element.getAttribute('aria-label'), element.getAttribute('placeholder'),
+        element.getAttribute('data-testid')
+      ].join(' '));
+      return label.includes('prompt') || label.includes('message') || label.includes('输入') || label.includes('提问') || label.includes('ask') || label.includes('query');
+    });
+    return named || (allowSend ? inputs[0] : (inputs.length === 1 ? inputs[0] : null));
+  };
+  const waitForInput = async () => {
+    const started = Date.now();
+    let input = findInput();
+    while (!input && Date.now() - started < 5000) { await sleep(45); input = findInput(); }
+    return input;
+  };
+  const input = await waitForInput();
+  if (!input) return { ok: false, reason: 'input-not-found' };
   input.focus();
   if ('value' in input) {
-    const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value');
-    if (descriptor && descriptor.set) {
-      descriptor.set.call(input, prompt);
-    } else {
-      input.value = prompt;
-    }
+    const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+    if (descriptor && descriptor.set) descriptor.set.call(input, prompt);
+    else input.value = prompt;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
   } else {
@@ -166,105 +85,57 @@ function buildPromptSubmitScript(prompt) {
     selection.removeAllRanges();
     selection.addRange(range);
     document.execCommand('insertText', false, prompt);
-    if (!input.textContent || !input.textContent.includes(prompt)) {
-      input.textContent = prompt;
-    }
-    input.dispatchEvent(new InputEvent('input', {
-      bubbles: true,
-      inputType: 'insertText',
-      data: prompt,
-    }));
+    if (!input.textContent || !input.textContent.includes(prompt)) input.textContent = prompt;
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: prompt }));
   }
-
-  await new Promise((resolve) => setTimeout(resolve, 450));
-
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  if (!allowSend) return { ok: true, method: 'filled' };
   const sendSelectors = [
-    '[data-testid="send-button"]',
-    '[data-testid="composer-send-button"]',
-    '[data-testid="composer-submit-button"]',
-    'button[data-testid*="send" i]',
-    'button[data-testid*="submit" i]',
-    '#composer-submit-button',
-    '[aria-label*="Send" i]',
-    '[aria-label*="Send prompt" i]',
-    '[aria-label*="发送" i]',
-    '[aria-label*="submit" i]',
-    'button[type="submit"]',
-    'button.send-button'
+    ...((adapterSpec.prompt && adapterSpec.prompt.sendSelectors) || []),
+    '[data-testid="send-button"]', '[data-testid="composer-send-button"]',
+    '[data-testid="composer-submit-button"]', 'button[data-testid*="send" i]',
+    '#composer-submit-button', '[aria-label*="Send" i]', '[aria-label*="发送" i]',
+    '[aria-label*="submit" i]', 'button[type="submit"]'
   ];
   const findSendButton = () => {
+    const scope = input.closest('form') || input.parentElement || document;
     const buttons = sendSelectors
-      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
-      .filter((button, index, list) => list.indexOf(button) === index)
-      .filter((button) => isVisible(button) && !button.disabled && button.getAttribute('aria-disabled') !== 'true');
-    return buttons.find((button) => {
-      const label = normalize([
-        button.textContent,
-        button.getAttribute('aria-label'),
-        button.getAttribute('data-testid'),
-        button.id,
-        button.className
-      ].join(' '));
-      return label.includes('send') || label.includes('发送') || label.includes('submit') || label.includes('arrow') || label.includes('提交');
-    }) || buttons[0];
+      .flatMap((s) => Array.from(scope.querySelectorAll ? scope.querySelectorAll(s) : []))
+      .filter((b, i, a) => a.indexOf(b) === i)
+      .filter((b) => isVisible(b) && !b.disabled && b.getAttribute('aria-disabled') !== 'true');
+    return buttons.find((b) => {
+      const l = normalize([b.textContent, b.getAttribute('aria-label'), b.getAttribute('data-testid'), b.id, b.className].join(' '));
+      return l.includes('send') || l.includes('发送') || l.includes('submit') || l.includes('提交');
+    }) || buttons[0] || null;
   };
   const waitForSendButton = async () => {
     const started = Date.now();
-    while (Date.now() - started < 3000) {
-      const button = findSendButton();
-      if (button) return button;
-      await new Promise((resolve) => setTimeout(resolve, 120));
-    }
+    while (Date.now() - started < 1600) { const b = findSendButton(); if (b) return b; await sleep(35); }
     return findSendButton();
   };
   const sendButton = await waitForSendButton();
-
   if (sendButton) {
-    sendButton.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
-    sendButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-    sendButton.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-    sendButton.click();
-    await new Promise((resolve) => setTimeout(resolve, 450));
-    return { ok: true, method: 'button' };
+    const rect = sendButton.getBoundingClientRect();
+    return { ok: false, inputReady: true, buttonPoint: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) } };
   }
-
-  input.dispatchEvent(new KeyboardEvent('keydown', {
-    key: 'Enter',
-    code: 'Enter',
-    bubbles: true,
-    cancelable: true,
-  }));
-  input.dispatchEvent(new KeyboardEvent('keyup', {
-    key: 'Enter',
-    code: 'Enter',
-    bubbles: true,
-    cancelable: true,
-  }));
-  return { ok: true, method: 'enter' };
+  const form = input.closest('form');
+  if (form && typeof form.requestSubmit === 'function') { form.requestSubmit(); return { ok: true, method: 'form' }; }
+  return { ok: false, reason: 'send-control-not-found', inputReady: true };
 })();
 `;
 }
 
 function debugLog(...args) {
-  if (DEBUG) {
-    console.log(...args);
-  }
+  if (DEBUG) console.log(...args);
 }
 
 function debugError(...args) {
-  if (DEBUG) {
-    console.error(...args);
-  }
+  if (DEBUG) console.error(...args);
 }
 
-/**
- * ViewManager — 管理多个 WebContentsView 的创建、切换、隐藏和 resize。
- * 每个模型对应一个独立 View，通过 setVisible 切换显隐，不销毁状态。
- */
 class ViewManager {
-  constructor(win, proxyConfig = { proxyMode: 'system', proxyUrl: '' }, restoreSnapshot = null) {
+  constructor(win, proxyConfig = { proxyMode: 'system', proxyUrl: '' }, restoreSnapshot = null, memoryOptions = {}) {
     this.win = win;
-    /** @type {Map<string, {view: WebContentsView, model: object}>} */
     this.views = new Map();
     this.activeId = null;
     this.proxyConfig = proxyConfig;
@@ -274,6 +145,82 @@ class ViewManager {
     this.splitDirection = 'horizontal';
     this.sidebarCollapsed = false;
     this.restoreEntries = this.createRestoreEntryMap(restoreSnapshot);
+    this.maxAliveViews = Number(memoryOptions.maxAliveViews) > 0 ? Math.floor(Number(memoryOptions.maxAliveViews)) : 0;
+    this.idleReclaimMinutes = Number(memoryOptions.inactiveViewTtlMinutes) > 0 ? Math.min(24 * 60, Math.floor(Number(memoryOptions.inactiveViewTtlMinutes))) : 30;
+    this.idleReclaimEnabled = memoryOptions.idleReclaimEnabled !== false;
+    this.creatingViews = new Map();
+  }
+
+  setMaxAliveViews(value) {
+    const next = Number(value) > 0 ? Math.floor(Number(value)) : 0;
+    this.maxAliveViews = next;
+    return { maxAliveViews: this.maxAliveViews, closedIds: next > 0 ? this.enforceMaxAlive() : [] };
+  }
+
+  setIdleReclaimSettings(enabled, minutes) {
+    this.idleReclaimEnabled = enabled !== false;
+    this.idleReclaimMinutes = Number(minutes) > 0 ? Math.min(24 * 60, Math.floor(Number(minutes))) : 0;
+  }
+
+  touchLRU(modelId) {
+    const entry = this.views.get(modelId);
+    if (entry) { entry.lastUsedAt = Date.now(); entry.inactiveSince = 0; }
+  }
+
+  markInactive(modelId) {
+    const entry = this.views.get(modelId);
+    if (entry && !entry.inactiveSince) entry.inactiveSince = Date.now();
+  }
+
+  beginBusy(modelId, reason) {
+    const entry = this.views.get(modelId);
+    if (!entry) return () => {};
+    const key = String(reason || 'operation');
+    entry.busyReasons.set(key, (entry.busyReasons.get(key) || 0) + 1);
+    return () => {
+      const current = this.views.get(modelId);
+      if (!current) return;
+      const count = current.busyReasons.get(key) || 0;
+      if (count <= 1) current.busyReasons.delete(key);
+      else current.busyReasons.set(key, count - 1);
+    };
+  }
+
+  isBusy(modelId) {
+    const entry = this.views.get(modelId);
+    return Boolean(entry && entry.busyReasons && entry.busyReasons.size > 0);
+  }
+
+  getProtectedIds() {
+    const protectedIds = new Set(this.splitMode ? this.splitIds : []);
+    if (this.activeId) protectedIds.add(this.activeId);
+    return protectedIds;
+  }
+
+  canAutoReclaim(modelId) {
+    return !this.getProtectedIds().has(modelId) && !this.isBusy(modelId);
+  }
+
+  isViewLoaded(modelId) {
+    const entry = this.views.get(modelId);
+    return Boolean(entry && entry.view && !entry.view.webContents.isDestroyed());
+  }
+
+  enforceMaxAlive() {
+    if (!this.maxAliveViews || this.maxAliveViews <= 0) return [];
+    const closedIds = [];
+    const protectedIds = this.getProtectedIds();
+    while (this.views.size > this.maxAliveViews) {
+      let oldestId = null, oldestAt = Infinity;
+      for (const [id, entry] of this.views) {
+        if (protectedIds.has(id) || this.isBusy(id)) continue;
+        if ((entry.lastUsedAt || 0) < oldestAt) { oldestAt = entry.lastUsedAt || 0; oldestId = id; }
+      }
+      if (!oldestId) break;
+      this.removeView(oldestId);
+      closedIds.push(oldestId);
+    }
+    return closedIds;
   }
 
   createRestoreEntryMap(snapshot) {
@@ -282,436 +229,271 @@ class ViewManager {
   }
 
   createProxyOptions() {
-    if (this.proxyConfig.proxyMode === 'direct') {
-      return { mode: 'direct' };
-    }
-
-    if (this.proxyConfig.proxyMode === 'custom') {
-      return {
-        mode: 'fixed_servers',
-        proxyRules: this.proxyConfig.proxyUrl,
-      };
-    }
-
+    if (this.proxyConfig.proxyMode === 'direct') return { mode: 'direct' };
+    if (this.proxyConfig.proxyMode === 'custom') return { mode: 'fixed_servers', proxyRules: this.proxyConfig.proxyUrl };
     return { mode: 'system' };
   }
 
   async applyProxyToSession(ses, model) {
     await ses.setProxy(this.createProxyOptions());
-
     if (this.proxyConfig.proxyMode === 'custom') {
       const proxyUsed = await ses.resolveProxy(model.url);
       debugLog(`[${model.name}] proxy: ${proxyUsed} -> ${model.url}`);
-      return;
     }
-
-    debugLog(`[${model.name}] proxy: ${this.proxyConfig.proxyMode} -> ${model.url}`);
   }
 
   async setProxyConfig(proxyConfig) {
     this.proxyConfig = proxyConfig;
-
+    const sessions = new Map();
     for (const [, entry] of this.views) {
       this.applyViewBackground(entry.view);
-      await this.applyProxyToSession(entry.view.webContents.session, entry.model);
+      const ses = entry.view.webContents.session;
+      if (!sessions.has(ses)) sessions.set(ses, entry.model);
     }
+    for (const [ses, model] of sessions) await this.applyProxyToSession(ses, model);
   }
 
-  getSidebarWidth() {
-    return this.sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH;
-  }
-
-  setSidebarCollapsed(collapsed) {
-    this.sidebarCollapsed = collapsed === true;
-    this.resizeAll();
-  }
-
-  getLoadingBackgroundColor() {
-    return this.proxyConfig.theme === 'light' ? LIGHT_LOADING_BACKGROUND : DARK_LOADING_BACKGROUND;
-  }
+  getSidebarWidth() { return this.sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH; }
+  setSidebarCollapsed(collapsed) { this.sidebarCollapsed = collapsed === true; this.resizeAll(); }
+  getLoadingBackgroundColor() { return this.proxyConfig.theme === 'light' ? LIGHT_LOADING_BACKGROUND : DARK_LOADING_BACKGROUND; }
 
   applyViewBackground(view) {
-    if (!view || typeof view.setBackgroundColor !== 'function') {
-      return;
-    }
-
-    try {
-      view.setBackgroundColor(this.getLoadingBackgroundColor());
-    } catch (error) {
-      debugError('[ViewManager] set view background failed', error);
-    }
+    if (!view || typeof view.setBackgroundColor !== 'function') return;
+    try { view.setBackgroundColor(this.getLoadingBackgroundColor()); } catch (e) { debugError('[ViewManager] set view background failed', e); }
   }
 
   emitLoadingState(modelId) {
-    if (!this.win || this.win.isDestroyed()) {
-      return;
-    }
-
+    if (!this.win || this.win.isDestroyed()) return;
     const entry = this.views.get(modelId);
-    this.win.webContents.send('view:loadingChanged', {
-      id: modelId,
-      loading: entry ? entry.loading : false,
-      failed: entry ? entry.loadFailed === true : false,
-    });
+    this.win.webContents.send('view:loadingChanged', { id: modelId, loading: entry ? entry.loading : false, failed: entry ? entry.loadFailed === true : false });
   }
 
   setLoadingState(modelId, loading, options = {}) {
     const entry = this.views.get(modelId);
-    if (!entry) {
-      return;
-    }
-
+    if (!entry) return;
     let changed = false;
-    if (Object.hasOwn(options, 'failed') && entry.loadFailed !== options.failed) {
-      entry.loadFailed = options.failed === true;
-      changed = true;
-    }
-
+    if (Object.hasOwn(options, 'failed') && entry.loadFailed !== options.failed) { entry.loadFailed = options.failed === true; changed = true; }
     const nextLoading = loading && !entry.hasContent;
-    if (entry.loading === nextLoading && !changed) {
-      return;
-    }
-
+    if (entry.loading === nextLoading && !changed) return;
     entry.loading = nextLoading;
     this.emitLoadingState(modelId);
-
-    if (this.splitMode || this.activeId !== modelId) {
-      return;
-    }
-
-    if (nextLoading || entry.loadFailed) {
-      entry.view.setVisible(false);
-      return;
-    }
-
+    if (this.splitMode || this.activeId !== modelId) return;
+    if (nextLoading || entry.loadFailed) { entry.view.setVisible(false); return; }
     entry.view.setVisible(true);
     this.updateBounds(modelId);
   }
 
-  /**
-   * 获取或懒创建某个模型的 View。
-   * 首次切换时才创建，避免启动时加载全部网站。
-   */
   async ensureView(model) {
-    if (this.views.has(model.id)) {
-      return this.views.get(model.id).view;
-    }
+    if (this.views.has(model.id)) return this.views.get(model.id).view;
+    if (this.creatingViews.has(model.id)) return this.creatingViews.get(model.id);
+    const createPromise = this.createView(model);
+    this.creatingViews.set(model.id, createPromise);
+    try { return await createPromise; } finally { this.creatingViews.delete(model.id); }
+  }
 
-    const partition = model.partition || `persist:${model.id}`;
-
+  async createView(model) {
+    const partition = getPersistPartition(model);
+    if (!partition) throw new Error(`invalid partition for model ${model.id}`);
     const view = new WebContentsView({
-      webPreferences: {
-        partition: partition,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
+      webPreferences: { partition, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: true },
     });
     this.applyViewBackground(view);
-
-    // 用默认 UA 去掉 Electron 标识（保留真实 Chrome 版本号，避免 Cloudflare 检测版本不匹配）
     const defaultUA = view.webContents.getUserAgent();
     view.webContents.setUserAgent(defaultUA.replace(/\s*Electron\/[\d.]+/, ''));
+    if (typeof view.webContents.setBackgroundThrottling === 'function') view.webContents.setBackgroundThrottling(true);
 
-    // ── 调试日志：排查白屏问题 ──
     view.webContents.on('did-start-loading', () => {
       debugLog(`[${model.name}] loading started`);
+      const entry = this.views.get(model.id);
+      if (entry) entry.busyReasons.set('loading', 1);
       this.setLoadingState(model.id, true, { failed: false });
     });
     view.webContents.on('dom-ready', () => {
       const entry = this.views.get(model.id);
-      if (entry) {
-        entry.hasContent = true;
-      }
+      if (entry) { entry.hasContent = true; entry.busyReasons.delete('loading'); }
       this.setLoadingState(model.id, false, { failed: false });
     });
     const restoreEntry = this.restoreEntries.get(model.id);
     let didRestoreScroll = false;
-
     view.webContents.on('did-finish-load', () => {
       debugLog(`[${model.name}] loading finished`);
       const entry = this.views.get(model.id);
-      if (entry) {
-        entry.hasContent = true;
-      }
+      if (entry) { entry.hasContent = true; entry.busyReasons.delete('loading'); }
       this.setLoadingState(model.id, false, { failed: false });
-
-      if (didRestoreScroll || !restoreEntry || restoreEntry.scrollY <= 0) {
-        return;
-      }
-
+      if (didRestoreScroll || !restoreEntry || restoreEntry.scrollY <= 0) return;
       didRestoreScroll = true;
       setTimeout(() => {
         if (view.webContents.isDestroyed()) return;
-        view.webContents
-          .executeJavaScript(`window.scrollTo(0, ${Math.floor(restoreEntry.scrollY)});`, false)
+        view.webContents.executeJavaScript(`window.scrollTo(0, ${Math.floor(restoreEntry.scrollY)});`, false)
           .catch((error) => debugError(`[${model.name}] restore scroll failed`, error));
       }, 600);
     });
     view.webContents.on('did-fail-load', (_e, errorCode, errorDesc, _validatedUrl, isMainFrame) => {
       debugError(`[${model.name}] loading failed: ${errorCode} - ${errorDesc}`);
-      if (errorCode === -3 || isMainFrame === false) {
-        return;
-      }
+      if (errorCode === -3 || isMainFrame === false) return;
+      const entry = this.views.get(model.id);
+      if (entry) entry.busyReasons.delete('loading');
       this.setLoadingState(model.id, false, { failed: true });
     });
     view.webContents.on('did-stop-loading', () => {
       debugLog(`[${model.name}] loading stopped`);
+      const entry = this.views.get(model.id);
+      if (entry) entry.busyReasons.delete('loading');
       this.setLoadingState(model.id, false);
     });
 
-    // 添加到窗口（在上层，覆盖 HTML 的侧边栏右侧区域）
     this.win.contentView.addChildView(view);
-
-    // 默认隐藏，等 switchTo 时再显示
     view.setVisible(false);
     view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-
-    this.views.set(model.id, { view, model, loading: true, hasContent: false, loadFailed: false });
+    this.views.set(model.id, { view, model, loading: true, hasContent: false, loadFailed: false, lastUsedAt: Date.now(), inactiveSince: 0, busyReasons: new Map([['creating', 1]]) });
     this.emitLoadingState(model.id);
 
-    // 设置代理后再加载 URL。
     const ses = view.webContents.session;
-    await this.applyProxyToSession(ses, model);
-
-    // 伪装 sec-ch-ua 头，移除 Electron 品牌标识（Cloudflare 关键检测点）
-    const chromeVer = defaultUA.match(/Chrome\/([\d]+)/)?.[1] || '130';
-    ses.webRequest.onBeforeSendHeaders((details, callback) => {
-      details.requestHeaders['sec-ch-ua'] = `"Chromium";v="${chromeVer}", "Not;A=Brand";v="99", "Google Chrome";v="${chromeVer}"`;
-      details.requestHeaders['sec-ch-ua-mobile'] = '?0';
-      details.requestHeaders['sec-ch-ua-platform'] = '"Windows"';
-      callback({ requestHeaders: details.requestHeaders });
-    });
-
-    view.webContents.loadURL(this.getInitialUrl(model, restoreEntry));
-
+    try {
+      await this.applyProxyToSession(ses, model);
+      const chromeVer = defaultUA.match(/Chrome\/([\d]+)/)?.[1] || '130';
+      installSessionHeaderHook(ses, chromeVer);
+      if (!view.webContents.isDestroyed() && this.views.get(model.id)?.view === view)
+        view.webContents.loadURL(this.getInitialUrl(model, restoreEntry));
+    } finally {
+      const entry = this.views.get(model.id);
+      if (entry && entry.view === view) entry.busyReasons.delete('creating');
+    }
     return view;
   }
 
   getInitialUrl(model, restoreEntry) {
-    if (!restoreEntry || typeof restoreEntry.url !== 'string') {
-      return model.url;
-    }
-
-    try {
-      const url = new URL(restoreEntry.url);
-      if (url.protocol === 'http:' || url.protocol === 'https:') {
-        return restoreEntry.url;
-      }
-    } catch {
-      return model.url;
-    }
-
-    return model.url;
+    if (!restoreEntry || typeof restoreEntry.url !== 'string') return model.url;
+    return isSameModelOrigin(restoreEntry.url, model.url) ? restoreEntry.url : model.url;
   }
 
-  /**
-   * 切换到指定模型。
-   * 隐藏当前 View，显示目标 View 并更新 bounds。
-   */
   async switchTo(modelId, model) {
-    this.splitMode = false;
-    this.splitIds = [];
-    this.splitRatios = [];
-
-    // 隐藏所有 View
-    for (const [, entry] of this.views) {
-      entry.view.setVisible(false);
-    }
-
-    // 确保目标 View 存在（懒创建）
+    this.splitMode = false; this.splitIds = []; this.splitRatios = [];
+    for (const [, entry] of this.views) { entry.view.setVisible(false); this.markInactive(entry.model.id); }
     const targetModel = model || (this.views.has(modelId) ? this.views.get(modelId).model : null);
-    if (!targetModel) {
-      console.error(`[ViewManager] model not found: ${modelId}`);
-      return;
-    }
-
+    if (!targetModel) { console.error(`[ViewManager] model not found: ${modelId}`); return []; }
     const view = await this.ensureView(targetModel);
     this.updateBounds(modelId);
-
     this.activeId = modelId;
+    this.touchLRU(modelId);
+    const closedIds = this.enforceMaxAlive();
     const entry = this.views.get(modelId);
-    view.setVisible(!entry || (!entry.loading && !entry.loadFailed));
+    if (!entry) return closedIds;
+    view.setVisible(!entry.loading && !entry.loadFailed);
+    return closedIds;
   }
 
   waitForWebContentsReady(webContents, timeoutMs = PROMPT_SUBMIT_TIMEOUT_MS) {
-    if (!webContents || webContents.isDestroyed() || !webContents.isLoading()) {
-      return Promise.resolve();
-    }
-
+    if (!webContents || webContents.isDestroyed() || !webContents.isLoading()) return Promise.resolve();
     return new Promise((resolve) => {
       let settled = false;
-      const cleanup = () => {
-        webContents.removeListener('did-stop-loading', done);
-        webContents.removeListener('did-finish-load', done);
-        webContents.removeListener('did-fail-load', done);
-        clearTimeout(timer);
-      };
-      const done = () => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        resolve();
-      };
+      const cleanup = () => { webContents.removeListener('did-stop-loading', done); webContents.removeListener('did-finish-load', done); webContents.removeListener('did-fail-load', done); clearTimeout(timer); };
+      const done = () => { if (settled) return; settled = true; cleanup(); resolve(); };
       const timer = setTimeout(done, timeoutMs);
-
-      webContents.once('did-stop-loading', done);
-      webContents.once('did-finish-load', done);
-      webContents.once('did-fail-load', done);
+      webContents.once('did-stop-loading', done); webContents.once('did-finish-load', done); webContents.once('did-fail-load', done);
     });
   }
 
   waitForEntryInteractive(entry, timeoutMs = PROMPT_INTERACTIVE_TIMEOUT_MS) {
     const webContents = entry ? entry.view.webContents : null;
-    if (!entry || !webContents || webContents.isDestroyed() || entry.hasContent || !webContents.isLoading()) {
-      return Promise.resolve();
-    }
-
+    if (!entry || !webContents || webContents.isDestroyed() || entry.hasContent || !webContents.isLoading()) return Promise.resolve();
     return new Promise((resolve) => {
       let settled = false;
-      const cleanup = () => {
-        webContents.removeListener('dom-ready', done);
-        webContents.removeListener('did-stop-loading', done);
-        webContents.removeListener('did-finish-load', done);
-        webContents.removeListener('did-fail-load', done);
-        clearTimeout(timer);
-      };
-      const done = () => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        resolve();
-      };
+      const cleanup = () => { webContents.removeListener('dom-ready', done); webContents.removeListener('did-stop-loading', done); webContents.removeListener('did-finish-load', done); webContents.removeListener('did-fail-load', done); clearTimeout(timer); };
+      const done = () => { if (settled) return; settled = true; cleanup(); resolve(); };
       const timer = setTimeout(done, timeoutMs);
-
-      webContents.once('dom-ready', done);
-      webContents.once('did-stop-loading', done);
-      webContents.once('did-finish-load', done);
-      webContents.once('did-fail-load', done);
+      webContents.once('dom-ready', done); webContents.once('did-stop-loading', done); webContents.once('did-finish-load', done); webContents.once('did-fail-load', done);
     });
   }
 
-  /**
-   * 向指定模型页面填入 Prompt 并发送。只操作当前模型网页，不触碰 session 数据。
-   */
   async submitPrompt(modelId, model, prompt, options = {}) {
     const targetModel = model || (this.views.has(modelId) ? this.views.get(modelId).model : null);
-    if (!targetModel || typeof prompt !== 'string' || !prompt.trim()) {
-      return { ok: false, reason: 'invalid-prompt' };
-    }
-
-    if (options.preserveLayout === true) {
-      await this.ensureView(targetModel);
-    } else {
-      await this.switchTo(modelId, targetModel);
-    }
-
+    if (!targetModel || typeof prompt !== 'string' || !prompt.trim()) return { ok: false, reason: 'invalid-prompt' };
+    if (options.preserveLayout === true) await this.ensureView(targetModel);
+    else await this.switchTo(modelId, targetModel);
     const entry = this.views.get(modelId);
-    if (!entry || entry.view.webContents.isDestroyed()) {
-      return { ok: false, reason: 'view-not-loaded' };
-    }
-
+    if (!entry || entry.view.webContents.isDestroyed()) return { ok: false, reason: 'view-not-loaded' };
     const { webContents } = entry.view;
-    await this.waitForEntryInteractive(entry);
-
+    if (!isSameModelOrigin(webContents.getURL(), targetModel.url)) return { ok: false, reason: 'origin-not-allowed' };
+    const endBusy = this.beginBusy(modelId, 'submit');
     try {
-      if (typeof webContents.focus === 'function') {
-        webContents.focus();
+      await this.waitForEntryInteractive(entry);
+      if (typeof webContents.focus === 'function') webContents.focus();
+      const adapter = resolveSiteAdapter(targetModel, webContents.getURL());
+      const result = await webContents.executeJavaScript(buildPromptSubmitScript(prompt.trim(), true, adapter.spec), false);
+      if (result && result.ok) return result;
+      if (result && result.inputReady && result.buttonPoint) {
+        const x = Math.max(0, Math.floor(Number(result.buttonPoint.x) || 0));
+        const y = Math.max(0, Math.floor(Number(result.buttonPoint.y) || 0));
+        webContents.sendInputEvent({ type: 'mouseMove', x, y });
+        webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
+        webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
+        return { ok: true, method: 'native-button' };
       }
-      return await webContents.executeJavaScript(buildPromptSubmitScript(prompt.trim()), false);
+      if (result && result.inputReady) {
+        return { ok: true, method: 'filled-only', requiresManualSend: true };
+      }
+      return result;
     } catch (error) {
       debugError(`[${entry.model.name}] prompt submit failed`, error);
-      return {
-        ok: false,
-        reason: 'submit-failed',
-        message: error && error.message ? error.message : String(error),
-      };
-    }
+      return { ok: false, reason: 'submit-failed', message: error && error.message ? error.message : String(error) };
+    } finally { endBusy(); }
   }
 
-  /**
-   * 进入分屏模式，同时显示 2-3 个模型。
-   */
+  async fillPromptOnly(modelId, model, prompt, options = {}) {
+    const targetModel = model || (this.views.has(modelId) ? this.views.get(modelId).model : null);
+    if (!targetModel || typeof prompt !== 'string' || !prompt.trim()) return { ok: false, reason: 'invalid-prompt' };
+    if (options.preserveLayout === true) await this.ensureView(targetModel);
+    else await this.switchTo(modelId, targetModel);
+    const entry = this.views.get(modelId);
+    if (!entry || entry.view.webContents.isDestroyed()) return { ok: false, reason: 'view-not-loaded' };
+    const { webContents } = entry.view;
+    if (!isSameModelOrigin(webContents.getURL(), targetModel.url)) return { ok: false, reason: 'origin-not-allowed' };
+    const endBusy = this.beginBusy(modelId, 'fill');
+    try {
+      await this.waitForEntryInteractive(entry);
+      webContents.focus();
+      const adapter = resolveSiteAdapter(targetModel, webContents.getURL());
+      return await webContents.executeJavaScript(buildPromptSubmitScript(prompt.trim(), false, adapter.spec), false);
+    } catch (error) {
+      return { ok: false, reason: 'fill-failed', message: error && error.message ? error.message : String(error) };
+    } finally { endBusy(); }
+  }
+
   async enterSplit(models, direction = 'horizontal') {
-    if (!Array.isArray(models) || models.length < 2 || models.length > 3) {
-      console.error('[ViewManager] split mode requires 2-3 models');
-      return false;
-    }
-
-    for (const [, entry] of this.views) {
-      entry.view.setVisible(false);
-    }
-
-    this.splitMode = true;
-    this.splitIds = models.map((model) => model.id);
-    this.splitRatios = models.map(() => 1 / models.length);
+    if (!Array.isArray(models) || models.length < 2 || models.length > 3) { console.error('[ViewManager] split mode requires 2-3 models'); return { ok: false, closedIds: [] }; }
+    for (const [, entry] of this.views) entry.view.setVisible(false);
+    this.splitMode = true; this.splitIds = models.map(m => m.id); this.splitRatios = models.map(() => 1 / models.length);
     this.splitDirection = direction === 'vertical' ? 'vertical' : 'horizontal';
     this.activeId = this.splitIds[0];
-
-    for (const model of models) {
-      const view = await this.ensureView(model);
-      view.setVisible(true);
-    }
-
+    for (const model of models) { const view = await this.ensureView(model); this.touchLRU(model.id); view.setVisible(true); }
+    const closedIds = this.enforceMaxAlive();
     this.updateSplitBounds();
-    return true;
+    return { ok: true, closedIds };
   }
 
-  /**
-   * 退出分屏模式，恢复当前活跃单视图。
-   */
   exitSplit() {
     if (!this.splitMode) return;
-
-    this.splitMode = false;
-    this.splitIds = [];
-    this.splitRatios = [];
-
-    for (const [, entry] of this.views) {
-      entry.view.setVisible(false);
-    }
-
+    this.splitMode = false; this.splitIds = []; this.splitRatios = [];
+    for (const [, entry] of this.views) entry.view.setVisible(false);
     this.showActive();
   }
 
-  /**
-   * 更新单个 View 的位置和大小（铺满侧边栏右侧区域）。
-   */
   updateBounds(modelId) {
     const entry = this.views.get(modelId);
     if (!entry) return;
-
     const [width, height] = this.win.getContentSize();
     const sidebarWidth = this.getSidebarWidth();
-    const contentHeight = Math.max(0, height - TOP_BAR_HEIGHT);
-    entry.view.setBounds({
-      x: sidebarWidth,
-      y: TOP_BAR_HEIGHT,
-      width: Math.max(0, width - sidebarWidth),
-      height: contentHeight,
-    });
+    entry.view.setBounds({ x: sidebarWidth, y: TOP_BAR_HEIGHT, width: Math.max(0, width - sidebarWidth), height: Math.max(0, height - TOP_BAR_HEIGHT) });
   }
 
-  /**
-   * 窗口 resize 时重算所有可见 View 的 bounds。
-   */
   resizeAll() {
-    if (this.splitMode) {
-      this.updateSplitBounds();
-      return;
-    }
-
-    for (const [id] of this.views) {
-      this.updateBounds(id);
-    }
+    if (this.splitMode) { this.updateSplitBounds(); return; }
+    for (const [id] of this.views) this.updateBounds(id);
   }
 
-  /**
-   * 更新分屏模式下多个 View 的位置和大小。
-   */
   updateSplitBounds() {
     if (!this.splitMode || this.splitIds.length === 0) return;
-
     const [width, height] = this.win.getContentSize();
     const sidebarWidth = this.getSidebarWidth();
     const contentHeight = Math.max(0, height - TOP_BAR_HEIGHT);
@@ -721,370 +503,154 @@ class ViewManager {
       const contentHeightForRows = Math.max(0, contentHeight - gutterTotal);
       const ratios = this.getNormalizedSplitRatios();
       let y = TOP_BAR_HEIGHT;
-
       this.splitIds.forEach((id, index) => {
         const entry = this.views.get(id);
         if (!entry) return;
-
         const isLast = index === this.splitIds.length - 1;
-        const rowHeight = isLast
-          ? TOP_BAR_HEIGHT + contentHeight - y
-          : Math.floor(contentHeightForRows * ratios[index]);
-
-        entry.view.setBounds({
-          x: sidebarWidth,
-          y,
-          width: availableWidth,
-          height: Math.max(0, rowHeight),
-        });
-
+        const rowHeight = isLast ? TOP_BAR_HEIGHT + contentHeight - y : Math.floor(contentHeightForRows * ratios[index]);
+        entry.view.setBounds({ x: sidebarWidth, y, width: availableWidth, height: Math.max(0, rowHeight) });
         y += rowHeight + SPLIT_GUTTER_WIDTH;
       });
       return;
     }
-
     const gutterTotal = SPLIT_GUTTER_WIDTH * (this.splitIds.length - 1);
     const contentWidth = Math.max(0, availableWidth - gutterTotal);
     const ratios = this.getNormalizedSplitRatios();
     let x = sidebarWidth;
-
     this.splitIds.forEach((id, index) => {
       const entry = this.views.get(id);
       if (!entry) return;
-
       const isLast = index === this.splitIds.length - 1;
-      const columnWidth = isLast
-        ? sidebarWidth + availableWidth - x
-        : Math.floor(contentWidth * ratios[index]);
-
-      entry.view.setBounds({
-        x,
-        y: TOP_BAR_HEIGHT,
-        width: Math.max(0, columnWidth),
-        height: contentHeight,
-      });
-
+      const columnWidth = isLast ? sidebarWidth + availableWidth - x : Math.floor(contentWidth * ratios[index]);
+      entry.view.setBounds({ x, y: TOP_BAR_HEIGHT, width: Math.max(0, columnWidth), height: contentHeight });
       x += columnWidth + SPLIT_GUTTER_WIDTH;
     });
   }
 
-  /**
-   * 更新分屏列宽比例。
-   */
   setSplitRatios(ratios) {
-    if (!this.splitMode || !Array.isArray(ratios) || ratios.length !== this.splitIds.length) {
-      return false;
-    }
-
-    const validRatios = ratios.map((ratio) => Number(ratio)).filter((ratio) => ratio > 0);
-    if (validRatios.length !== ratios.length) {
-      return false;
-    }
-
-    const total = validRatios.reduce((sum, ratio) => sum + ratio, 0);
-    if (total <= 0) {
-      return false;
-    }
-
-    this.splitRatios = validRatios.map((ratio) => ratio / total);
+    if (!this.splitMode || !Array.isArray(ratios) || ratios.length !== this.splitIds.length) return false;
+    const validRatios = ratios.map(Number).filter(r => r > 0);
+    if (validRatios.length !== ratios.length) return false;
+    const total = validRatios.reduce((s, r) => s + r, 0);
+    if (total <= 0) return false;
+    this.splitRatios = validRatios.map(r => r / total);
     this.updateSplitBounds();
     return true;
   }
 
-  /**
-   * 获取当前分屏比例；缺失或异常时回退到均分。
-   */
   getNormalizedSplitRatios() {
-    if (!Array.isArray(this.splitRatios) || this.splitRatios.length !== this.splitIds.length) {
-      return this.splitIds.map(() => 1 / this.splitIds.length);
-    }
-
-    const total = this.splitRatios.reduce((sum, ratio) => sum + ratio, 0);
-    if (total <= 0) {
-      return this.splitIds.map(() => 1 / this.splitIds.length);
-    }
-
-    return this.splitRatios.map((ratio) => ratio / total);
+    if (!Array.isArray(this.splitRatios) || this.splitRatios.length !== this.splitIds.length) return this.splitIds.map(() => 1 / this.splitIds.length);
+    const total = this.splitRatios.reduce((s, r) => s + r, 0);
+    if (total <= 0) return this.splitIds.map(() => 1 / this.splitIds.length);
+    return this.splitRatios.map(r => r / total);
   }
 
-  /**
-   * 刷新当前活跃 View。
-   */
-  refreshActive() {
-    if (!this.activeId) return;
-    const entry = this.views.get(this.activeId);
-    if (entry) {
-      entry.view.webContents.reload();
-    }
-  }
+  refreshActive() { if (!this.activeId) return; const e = this.views.get(this.activeId); if (e) e.view.webContents.reload(); }
+  refreshView(modelId) { const e = this.views.get(modelId); if (e && !e.view.webContents.isDestroyed()) { e.view.webContents.reload(); return true; } return false; }
 
-  /**
-   * 刷新指定模型的 View；未加载时不做任何操作。
-   */
-  refreshView(modelId) {
-    const entry = this.views.get(modelId);
-    if (entry && !entry.view.webContents.isDestroyed()) {
-      entry.view.webContents.reload();
-      return true;
-    }
 
-    return false;
-  }
-
-  /**
-   * 只读提取当前活跃模型的页面内容，用于导出 Markdown。
-   */
-  async extractActiveConversation() {
-    if (!this.activeId) {
-      return { ok: false, reason: 'no-active-view' };
-    }
-
-    const entry = this.views.get(this.activeId);
-    if (!entry || entry.view.webContents.isDestroyed()) {
-      return { ok: false, reason: 'view-not-loaded' };
-    }
-
-    try {
-      const data = await entry.view.webContents.executeJavaScript(CONVERSATION_EXTRACT_SCRIPT, false);
-      return {
-        ok: true,
-        modelId: this.activeId,
-        modelName: entry.model.name,
-        ...data,
-      };
-    } catch (error) {
-      debugError(`[${entry.model.name}] conversation export failed`, error);
-      return {
-        ok: false,
-        reason: 'extract-failed',
-        message: error && error.message ? error.message : String(error),
-      };
-    }
-  }
-
-  /**
-   * 更新已创建 View 的模型信息；URL 变化时复用当前 session 重新加载。
-   */
   updateModel(model) {
     const entry = this.views.get(model.id);
     if (!entry) return;
-
     const previousUrl = entry.model.url;
     entry.model = model;
-
-    if (previousUrl !== model.url && !entry.view.webContents.isDestroyed()) {
-      entry.view.webContents.loadURL(model.url);
-    }
+    if (previousUrl !== model.url && !entry.view.webContents.isDestroyed()) entry.view.webContents.loadURL(model.url);
   }
 
-  /**
-   * 生成当前会话快照。只保存页面位置，不触碰 Cookie/LocalStorage 等登录态。
-   */
   async snapshot() {
     const entries = [];
-
     for (const [modelId, entry] of this.views) {
       const { webContents } = entry.view;
       if (webContents.isDestroyed()) continue;
-
       const url = webContents.getURL();
       if (!this.isSnapshotUrl(url)) continue;
-
       let scrollY = 0;
-      try {
-        scrollY = await webContents.executeJavaScript('Math.max(0, Math.floor(window.scrollY || 0));', false);
-      } catch (error) {
-        debugError(`[${entry.model.name}] snapshot scroll failed`, error);
-      }
-
-      entries.push({
-        modelId,
-        url,
-        scrollY: Math.max(0, Number(scrollY) || 0),
-      });
+      try { scrollY = await webContents.executeJavaScript('Math.max(0, Math.floor(window.scrollY || 0));', false); }
+      catch (error) { debugError(`[${entry.model.name}] snapshot scroll failed`, error); }
+      entries.push({ modelId, url, scrollY: Math.max(0, Number(scrollY) || 0) });
     }
-
-    return {
-      version: 1,
-      savedAt: new Date().toISOString(),
-      activeModelId: this.activeId || '',
-      splitMode: this.splitMode,
-      splitIds: this.splitMode ? this.splitIds.slice() : [],
-      splitRatios: this.splitMode ? this.getNormalizedSplitRatios() : [],
-      splitDirection: this.splitMode ? this.splitDirection : 'horizontal',
-      entries,
-    };
+    return { version: 1, savedAt: new Date().toISOString(), activeModelId: this.activeId || '', splitMode: this.splitMode, splitIds: this.splitMode ? this.splitIds.slice() : [], splitRatios: this.splitMode ? this.getNormalizedSplitRatios() : [], splitDirection: this.splitMode ? this.splitDirection : 'horizontal', entries };
   }
 
   isSnapshotUrl(url) {
-    if (typeof url !== 'string' || !url) {
-      return false;
-    }
-
-    try {
-      const parsed = new URL(url);
-      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-    } catch {
-      return false;
-    }
+    if (typeof url !== 'string' || !url) return false;
+    try { const p = new URL(url); return p.protocol === 'http:' || p.protocol === 'https:'; } catch { return false; }
   }
 
-  /**
-   * 移除并销毁某个模型的 View。
-   */
   removeView(modelId) {
     const entry = this.views.get(modelId);
     if (!entry) return this.getState();
-
     this.win.contentView.removeChildView(entry.view);
     entry.view.webContents.destroy();
     this.views.delete(modelId);
-    this.splitIds = this.splitIds.filter((id) => id !== modelId);
+    this.splitIds = this.splitIds.filter(id => id !== modelId);
     this.splitRatios = this.splitIds.map(() => 1 / Math.max(1, this.splitIds.length));
-
-    if (this.activeId === modelId) {
-      this.activeId = this.splitMode && this.splitIds.length > 0 ? this.splitIds[0] : null;
-    }
-
-    if (this.splitMode && this.splitIds.length < 2) {
-      this.exitSplit();
-    } else if (this.splitMode) {
-      this.updateSplitBounds();
-    }
-
+    if (this.activeId === modelId) this.activeId = this.splitMode && this.splitIds.length > 0 ? this.splitIds[0] : null;
+    if (this.splitMode && this.splitIds.length < 2) this.exitSplit();
+    else if (this.splitMode) this.updateSplitBounds();
     return this.getState();
   }
 
-  /**
-   * 结束单个模型页面进程，用于主动释放内存，不删除模型配置和登录态。
-   */
-  closeView(modelId) {
-    return this.removeView(modelId);
-  }
+  closeView(modelId) { return this.removeView(modelId); }
 
-  /**
-   * 结束后台已加载但当前未展示的模型页面。
-   */
   closeInactiveViews() {
-    const visibleIds = new Set(this.splitMode ? this.splitIds : [this.activeId].filter(Boolean));
     const closedIds = [];
-
     for (const modelId of Array.from(this.views.keys())) {
-      if (visibleIds.has(modelId)) continue;
+      if (!this.canAutoReclaim(modelId)) continue;
       this.removeView(modelId);
       closedIds.push(modelId);
     }
-
-    return {
-      ...this.getState(),
-      closedIds,
-    };
+    return { ...this.getState(), closedIds };
   }
 
-  /**
-   * 获取当前视图状态，供渲染进程同步 UI。
-   */
+  closeIdleViews(idleMinutes = this.idleReclaimMinutes) {
+    if (!this.idleReclaimEnabled || !Number(idleMinutes) || idleMinutes <= 0) return { ...this.getState(), closedIds: [] };
+    const cutoff = Date.now() - Math.floor(Number(idleMinutes) * 60 * 1000);
+    const candidates = Array.from(this.views.entries())
+      .filter(([modelId, entry]) => this.canAutoReclaim(modelId) && entry.inactiveSince > 0 && entry.inactiveSince <= cutoff)
+      .sort(([, a], [, b]) => a.inactiveSince - b.inactiveSince);
+    const closedIds = [];
+    candidates.forEach(([modelId]) => { if (!this.canAutoReclaim(modelId)) return; this.removeView(modelId); closedIds.push(modelId); });
+    return { ...this.getState(), closedIds };
+  }
+
+  hibernateAllViews() {
+    const closedIds = Array.from(this.views.keys());
+    this.destroyAll();
+    return { ...this.getState(), closedIds };
+  }
+
   getState() {
-    return {
-      activeId: this.activeId,
-      splitMode: this.splitMode,
-      splitIds: this.splitIds.slice(),
-      splitRatios: this.splitMode ? this.getNormalizedSplitRatios() : [],
-      splitDirection: this.splitMode ? this.splitDirection : 'horizontal',
-      loadedIds: Array.from(this.views.keys()),
-    };
+    return { activeId: this.activeId, splitMode: this.splitMode, splitIds: this.splitIds.slice(), splitRatios: this.splitMode ? this.getNormalizedSplitRatios() : [], splitDirection: this.splitMode ? this.splitDirection : 'horizontal', loadedIds: Array.from(this.views.keys()) };
   }
 
-  /**
-   * 获取模型运行状态，供状态面板展示。
-   */
   getStatus(models = [], memoryByPid = new Map()) {
     const state = this.getState();
     const visibleIds = new Set(this.splitMode ? this.splitIds : [this.activeId].filter(Boolean));
-
-    return {
-      ...state,
-      models: models.map((model) => {
-        const entry = this.views.get(model.id);
-        const webContents = entry && !entry.view.webContents.isDestroyed()
-          ? entry.view.webContents
-          : null;
-        const processId = webContents && typeof webContents.getOSProcessId === 'function'
-          ? webContents.getOSProcessId()
-          : 0;
-
-        return {
-          id: model.id,
-          name: model.name,
-          icon: model.icon || '🤖',
-          iconUrl: model.iconUrl || '',
-          iconUrls: Array.isArray(model.iconUrls) ? model.iconUrls : [],
-          color: model.color || '#666666',
-          loaded: Boolean(webContents),
-          active: model.id === this.activeId,
-          visible: visibleIds.has(model.id),
-          inSplit: this.splitMode && this.splitIds.includes(model.id),
-          title: webContents ? webContents.getTitle() : '',
-          url: webContents ? webContents.getURL() : model.url,
-          isLoading: entry ? entry.loading || (webContents ? webContents.isLoading() : false) : false,
-          loadFailed: entry ? entry.loadFailed === true : false,
-          processId,
-          memoryMb: processId && memoryByPid.has(processId) ? memoryByPid.get(processId) : null,
-        };
-      }),
-    };
+    return { ...state, models: models.map(model => {
+      const entry = this.views.get(model.id);
+      const wc = entry && !entry.view.webContents.isDestroyed() ? entry.view.webContents : null;
+      const processId = wc && typeof wc.getOSProcessId === 'function' ? wc.getOSProcessId() : 0;
+      return { id: model.id, name: model.name, icon: model.icon || '\ud83e\udd16', iconUrl: model.iconUrl || '', iconUrls: Array.isArray(model.iconUrls) ? model.iconUrls : [], color: model.color || '#666666', loaded: Boolean(wc), active: model.id === this.activeId, visible: visibleIds.has(model.id), inSplit: this.splitMode && this.splitIds.includes(model.id), title: wc ? wc.getTitle() : '', url: wc ? wc.getURL() : model.url, isLoading: entry ? entry.loading || (wc ? wc.isLoading() : false) : false, loadFailed: entry ? entry.loadFailed === true : false, busy: entry ? entry.busyReasons.size > 0 : false, busyReasons: entry ? Array.from(entry.busyReasons.keys()) : [], inactiveSince: entry && entry.inactiveSince ? entry.inactiveSince : null, processId, memoryMb: processId && memoryByPid.has(processId) ? memoryByPid.get(processId) : null };
+    }) };
   }
 
-  /**
-   * 隐藏所有 View（用于弹窗遮挡时让 HTML 覆盖层可见）。
-   */
-  hideAll() {
-    for (const [, entry] of this.views) {
-      entry.view.setVisible(false);
-    }
-  }
+  hideAll() { for (const [, entry] of this.views) entry.view.setVisible(false); }
 
-  /**
-   * 恢复显示当前活跃 View（弹窗关闭后调用）。
-   */
   showActive() {
     if (this.splitMode) {
-      for (const id of this.splitIds) {
-        const entry = this.views.get(id);
-        if (entry) {
-          entry.view.setVisible(true);
-        }
-      }
+      for (const id of this.splitIds) { const entry = this.views.get(id); if (entry) entry.view.setVisible(true); }
       this.updateSplitBounds();
       return;
     }
-
     if (!this.activeId) return;
     const entry = this.views.get(this.activeId);
-    if (entry) {
-      entry.view.setVisible(!entry.loading);
-      this.updateBounds(this.activeId);
-    }
+    if (entry) { entry.view.setVisible(!entry.loading); this.updateBounds(this.activeId); }
   }
 
-  /**
-   * 销毁所有 View（窗口关闭时调用）。
-   */
   destroyAll() {
-    for (const [, entry] of this.views) {
-      try {
-        this.win.contentView.removeChildView(entry.view);
-        entry.view.webContents.destroy();
-      } catch (e) {
-        // 忽略销毁错误
-      }
-    }
-    this.views.clear();
-    this.activeId = null;
-    this.splitMode = false;
-    this.splitIds = [];
-    this.splitRatios = [];
-    this.splitDirection = 'horizontal';
+    for (const [, entry] of this.views) { try { this.win.contentView.removeChildView(entry.view); entry.view.webContents.destroy(); } catch (e) {} }
+    this.views.clear(); this.activeId = null; this.splitMode = false; this.splitIds = []; this.splitRatios = []; this.splitDirection = 'horizontal';
     return this.getState();
   }
 }

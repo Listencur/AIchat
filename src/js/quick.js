@@ -13,6 +13,7 @@
   let pinned = false;
   let modelsCache = [];
   let selectedModelIds = new Set();
+  let submitting = false;
 
   async function loadModels(preferredIds = []) {
     const data = await window.api.models.list();
@@ -142,6 +143,8 @@
   async function submitQuick(event) {
     event.preventDefault();
 
+    if (submitting) return;
+
     const prompt = promptInput.value.trim();
     if (!prompt) {
       promptInput.focus();
@@ -155,24 +158,35 @@
       mode: 'open',
     };
 
+    submitting = true;
     submitBtn.disabled = true;
     promptInput.value = '';
-    await window.api.quick.stateSet({
-      draft: '',
-      lastModelId: payload.modelId,
-      lastModelIds: payload.modelIds,
-      submitMode: 'open',
-      pinned,
-    });
     closeModelMenu();
-    window.api.quick.hide();
-    await window.api.quick.submit(payload);
-    submitBtn.disabled = false;
+
+    // 主进程负责持久化与隐藏；不要让额外状态 IPC 挡在发送前面。
+    try {
+      const result = await window.api.quick.submit(payload);
+      if (!result || !result.ok) {
+        promptInput.value = prompt;
+        window.api.quick.stateSet({ draft: prompt });
+      } else if (Array.isArray(result.results) && result.results.some((item) => item.requiresManualSend)) {
+        const names = result.results
+          .filter((item) => item.requiresManualSend)
+          .map((item) => modelsCache.find((model) => model.id === item.modelId)?.name || item.modelId)
+          .join('、');
+        window.alert(`${names} 未启用自动发送：内容已尝试填入，请在对应页面手动发送。`);
+      }
+    } finally {
+      submitting = false;
+      submitBtn.disabled = false;
+    }
   }
 
   function renderPinned() {
     pinBtn.classList.toggle('is-pinned', pinned);
     pinBtn.title = pinned ? '已置顶，失焦不隐藏' : '置顶，失焦不隐藏';
+    pinBtn.setAttribute('aria-pressed', String(pinned));
+    pinBtn.setAttribute('aria-label', pinned ? '取消置顶' : '置顶');
   }
 
   async function togglePinned() {

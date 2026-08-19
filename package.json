@@ -6,6 +6,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
+    "test": "node --test test/*.test.js",
     "build:launcher": "powershell -ExecutionPolicy Bypass -File scripts/build-launcher.ps1",
     "dist:portable": "electron-builder --win portable"
   },

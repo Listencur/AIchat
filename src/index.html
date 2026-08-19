@@ -50,10 +50,6 @@
       </div>
 
       <div class="sidebar-footer">
-        <button class="btn-tool" id="btnExportConversation" type="button">
-          <span class="btn-icon">⇩</span>
-          <span>导出对话</span>
-        </button>
         <div class="split-panel" id="splitPanel">
           <button class="btn-tool" id="btnToggleSplit" type="button">
             <span class="btn-icon">▦</span>
@@ -140,96 +136,150 @@
         <h2>设置</h2>
         <button class="modal-close" id="btnCloseSettings">&times;</button>
       </div>
-      <form class="modal-body" id="settingsForm">
-        <fieldset class="settings-group">
-          <legend>会话</legend>
-          <label class="toggle-row">
-            <input type="checkbox" id="inputRestoreSnapshot" name="restoreSnapshot" />
-            <span>
-              <strong>启动时恢复上次会话</strong>
-              <small>恢复上次打开的模型、分屏布局和页面位置</small>
-            </span>
-          </label>
-        </fieldset>
-        <fieldset class="settings-group">
-          <legend>组合键</legend>
-          <label class="toggle-row">
-            <input type="checkbox" id="inputShortcutEnabled" name="shortcutEnabled" />
-            <span>
-              <strong>启用全局快捷键</strong>
-              <small>在任意位置唤起快速输入窗口</small>
-            </span>
-          </label>
-          <label class="form-row">
-            <span class="form-label">组合键</span>
-            <input type="text" id="inputShortcutAccelerator" name="shortcutAccelerator" placeholder="Ctrl+Shift+Space" />
-          </label>
-        </fieldset>
-        <fieldset class="settings-group">
-          <legend>关闭窗口</legend>
-          <label class="radio-row">
-            <input type="radio" name="closeAction" value="ask" />
-            <span>
-              <strong>每次询问</strong>
-              <small>关闭窗口时询问最小化到托盘或退出程序</small>
-            </span>
-          </label>
-          <label class="radio-row">
-            <input type="radio" name="closeAction" value="minimize" />
-            <span>
-              <strong>默认最小化</strong>
-              <small>关闭窗口时直接最小化到系统托盘</small>
-            </span>
-          </label>
-          <label class="radio-row">
-            <input type="radio" name="closeAction" value="quit" />
-            <span>
-              <strong>默认退出</strong>
-              <small>关闭窗口时直接退出程序</small>
-            </span>
-          </label>
-        </fieldset>
-        <fieldset class="settings-group">
-          <legend>代理</legend>
-          <div class="data-cleanup-row" aria-label="数据清理">
-            <button type="button" class="cleanup-button" id="btnClearCache">
-              <strong>清除缓存</strong>
-              <small>保留各模型登录状态</small>
-            </button>
-            <button type="button" class="cleanup-button danger" id="btnClearLoginState">
-              <strong>清除登录状态</strong>
-              <small>所有模型需要重新登录</small>
-            </button>
+      <form class="modal-body settings-layout" id="settingsForm">
+        <nav class="settings-nav" id="settingsNav" aria-label="设置分类">
+          <button type="button" class="settings-nav-item active" data-settings-panel="general">常规</button>
+          <button type="button" class="settings-nav-item" data-settings-panel="memory">内存</button>
+          <button type="button" class="settings-nav-item" data-settings-panel="data">数据</button>
+          <button type="button" class="settings-nav-item" data-settings-panel="shortcut">快捷键</button>
+          <button type="button" class="settings-nav-item" data-settings-panel="network">网络</button>
+        </nav>
+
+        <div class="settings-main">
+          <div class="settings-panels">
+            <section class="settings-panel active" data-settings-panel="general" role="tabpanel">
+              <h3 class="settings-panel-title">常规</h3>
+              <label class="toggle-row">
+                <input type="checkbox" id="inputRestoreSnapshot" name="restoreSnapshot" />
+                <span>
+                  <strong>启动时恢复上次会话</strong>
+                  <small>仅恢复活跃模型；分屏会先询问</small>
+                </span>
+              </label>
+              <div class="settings-subblock">
+                <span class="settings-sublabel">关闭窗口</span>
+                <label class="radio-row compact">
+                  <input type="radio" name="closeAction" value="ask" />
+                  <span>
+                    <strong>每次询问</strong>
+                    <small>托盘或退出</small>
+                  </span>
+                </label>
+                <label class="radio-row compact">
+                  <input type="radio" name="closeAction" value="minimize" />
+                  <span>
+                    <strong>最小化到托盘</strong>
+                  </span>
+                </label>
+                <label class="radio-row compact">
+                  <input type="radio" name="closeAction" value="quit" />
+                  <span>
+                    <strong>直接退出</strong>
+                  </span>
+                </label>
+              </div>
+            </section>
+
+            <section class="settings-panel" data-settings-panel="memory" role="tabpanel" hidden>
+              <h3 class="settings-panel-title">内存</h3>
+              <label class="form-row">
+                <span class="form-label">托盘时</span>
+                <select id="inputTrayMemoryMode" name="trayMemoryMode">
+                  <option value="keepAll">保持全部页面</option>
+                  <option value="closeInactive">只保留当前页</option>
+                  <option value="hibernateAll">结束全部页面</option>
+                </select>
+              </label>
+              <label class="form-row">
+                <span class="form-label">最大保活页数</span>
+                <input type="number" id="inputMaxAliveViews" name="maxAliveViews" min="0" max="12" step="1" placeholder="0" />
+              </label>
+              <p class="settings-hint">0 表示不限制；超出后释放最久未用后台页，登录保留。</p>
+              <label class="toggle-row">
+                <input type="checkbox" id="inputAutoReclaim" name="autoReclaimEnabled" />
+                <span>
+                  <strong>内存过高时结束后台</strong>
+                  <small>达到阈值后每 30 秒检查</small>
+                </span>
+              </label>
+              <label class="form-row">
+                <span class="form-label">阈值 MB</span>
+                <input type="number" id="inputMemoryPressureMb" name="memoryPressureMb" min="500" max="16000" step="100" />
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="inputIdleReclaim" name="idleReclaimEnabled" />
+                <span>
+                  <strong>闲置页面自动释放</strong>
+                  <small>仅非当前、非分屏、非忙碌页</small>
+                </span>
+              </label>
+              <label class="form-row">
+                <span class="form-label">闲置分钟</span>
+                <input type="number" id="inputInactiveViewTtlMinutes" name="inactiveViewTtlMinutes" min="0" max="1440" step="5" />
+              </label>
+            </section>
+
+            <section class="settings-panel" data-settings-panel="data" role="tabpanel" hidden>
+              <h3 class="settings-panel-title">数据</h3>
+              <div class="data-cleanup-row" aria-label="数据清理">
+                <button type="button" class="cleanup-button" id="btnClearCache">
+                  <strong>清除缓存</strong>
+                  <small>网页缓存，保留登录</small>
+                </button>
+                <button type="button" class="cleanup-button danger" id="btnClearLoginState">
+                  <strong>清除登录状态</strong>
+                  <small>全部模型需重新登录</small>
+                </button>
+              </div>
+            </section>
+
+            <section class="settings-panel" data-settings-panel="shortcut" role="tabpanel" hidden>
+              <h3 class="settings-panel-title">快捷键</h3>
+              <label class="toggle-row">
+                <input type="checkbox" id="inputShortcutEnabled" name="shortcutEnabled" />
+                <span>
+                  <strong>启用全局快捷键</strong>
+                  <small>任意位置唤起快速提问</small>
+                </span>
+              </label>
+              <label class="form-row">
+                <span class="form-label">组合键</span>
+                <input type="text" id="inputShortcutAccelerator" name="shortcutAccelerator" placeholder="Ctrl+Shift+Space" />
+              </label>
+            </section>
+
+            <section class="settings-panel" data-settings-panel="network" role="tabpanel" hidden>
+              <h3 class="settings-panel-title">网络</h3>
+              <label class="radio-row compact">
+                <input type="radio" name="proxyMode" value="system" />
+                <span>
+                  <strong>系统代理</strong>
+                </span>
+              </label>
+              <label class="radio-row compact">
+                <input type="radio" name="proxyMode" value="custom" />
+                <span>
+                  <strong>自定义代理</strong>
+                </span>
+              </label>
+              <label class="form-row proxy-url-row" id="proxyUrlRow">
+                <span class="form-label">代理地址</span>
+                <input type="text" id="inputProxyUrl" name="proxyUrl" placeholder="http://127.0.0.1:7897" />
+              </label>
+              <label class="radio-row compact">
+                <input type="radio" name="proxyMode" value="direct" />
+                <span>
+                  <strong>直连</strong>
+                  <small>不使用代理</small>
+                </span>
+              </label>
+            </section>
           </div>
-          <label class="radio-row">
-            <input type="radio" name="proxyMode" value="system" />
-            <span>
-              <strong>系统代理</strong>
-              <small>默认使用系统网络代理设置</small>
-            </span>
-          </label>
-          <label class="radio-row">
-            <input type="radio" name="proxyMode" value="custom" />
-            <span>
-              <strong>自定义代理</strong>
-              <small>例如 http://127.0.0.1:7897</small>
-            </span>
-          </label>
-          <label class="form-row proxy-url-row" id="proxyUrlRow">
-            <span class="form-label">代理地址</span>
-            <input type="text" id="inputProxyUrl" name="proxyUrl" placeholder="http://127.0.0.1:7897" />
-          </label>
-          <label class="radio-row">
-            <input type="radio" name="proxyMode" value="direct" />
-            <span>
-              <strong>直连</strong>
-              <small>不使用代理</small>
-            </span>
-          </label>
-        </fieldset>
-        <div class="modal-footer">
-          <button type="button" class="btn-cancel" id="btnCancelSettings">取消</button>
-          <button type="submit" class="btn-confirm">保存</button>
+
+          <div class="modal-footer">
+            <button type="button" class="btn-cancel" id="btnCancelSettings">取消</button>
+            <button type="submit" class="btn-confirm">保存</button>
+          </div>
         </div>
       </form>
     </div>

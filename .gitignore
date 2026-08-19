@@ -1,3 +1,46 @@
+# Dependencies
 node_modules/
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+dist/
+build/
+*.log
 error.log
+
+# Windows shortcuts
 *.lnk
+
+# Test results
+test-results/
+
+# Personal data and chat records
+会话记录*/
+聊天记录*/
+*.bak
+*.tmp
+*.swp
+
+# User-specific data
+data/models.json
+data/*.local.json
+data/user-*/
+
+# Generated icons (keep original asset)
+assets/app-icon.ico.bak
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# OpenCode plans (session internal)
+.opencode/
+
+# Personal data backup (not for repo)
+.git-personal-data-backup/
+

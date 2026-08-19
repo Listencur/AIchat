@@ -34,7 +34,7 @@
   const placeholderText = document.getElementById('placeholderText');
   const placeholderRefreshBtn = document.getElementById('btnPlaceholderRefresh');
   const splitToggleBtn = document.getElementById('btnToggleSplit');
-  const exportConversationBtn = document.getElementById('btnExportConversation');
+
   const splitActions = document.getElementById('splitActions');
   const splitHint = document.getElementById('splitHint');
   const splitDirectionControl = document.getElementById('splitDirection');
@@ -337,34 +337,6 @@
     syncViewState(state, id);
   }
 
-  async function exportConversation() {
-    if (!activeModelId) {
-      window.alert('请先选择一个模型。');
-      return;
-    }
-
-    exportConversationBtn.disabled = true;
-    const originalText = exportConversationBtn.querySelector('span:last-child').textContent;
-    exportConversationBtn.querySelector('span:last-child').textContent = '导出中';
-
-    try {
-      const result = await window.api.view.exportConversation();
-      if (result && result.canceled) {
-        return;
-      }
-
-      if (!result || !result.ok) {
-        window.alert('当前页面暂时无法导出，可能是页面尚未加载完成或站点结构已变化。');
-        return;
-      }
-
-      window.alert(`导出完成：\n${result.filePath}`);
-    } finally {
-      exportConversationBtn.disabled = false;
-      exportConversationBtn.querySelector('span:last-child').textContent = originalText;
-    }
-  }
-
   async function openStatusModal() {
     await window.api.view.setVisible(false);
     statusModal.classList.add('show');
@@ -386,8 +358,15 @@
     const loadedCount = models.filter((model) => model.loaded).length;
     const visibleCount = models.filter((model) => model.visible).length;
     const backgroundCount = models.filter((model) => model.loaded && !model.visible).length;
+    const memory = status.memory || {};
+    const totalMb = typeof memory.totalMb === 'number' ? memory.totalMb : null;
+    const thresholdMb = typeof memory.thresholdMb === 'number' ? memory.thresholdMb : null;
+    const totalText = totalMb != null ? ` · 总内存 ${totalMb} MB` : '';
+    const pressureText = totalMb != null && thresholdMb != null && totalMb >= thresholdMb
+      ? ' · 已超阈值'
+      : '';
 
-    statusSummary.textContent = `已运行 ${loadedCount}/${models.length} · 当前显示 ${visibleCount} · 后台 ${backgroundCount}`;
+    statusSummary.textContent = `已运行 ${loadedCount}/${models.length} · 当前显示 ${visibleCount} · 后台 ${backgroundCount}${totalText}${pressureText}`;
     closeInactiveModelsBtn.disabled = backgroundCount === 0;
     statusList.innerHTML = '';
 
@@ -417,6 +396,7 @@
       badges.appendChild(createStatusBadge(statusLabel, statusType));
       if (model.active) badges.appendChild(createStatusBadge('当前', 'active'));
       if (model.inSplit) badges.appendChild(createStatusBadge('分屏', 'split'));
+      if (model.busy) badges.appendChild(createStatusBadge('忙碌', 'active'));
 
       titleRow.appendChild(name);
       titleRow.appendChild(badges);
@@ -475,6 +455,12 @@
     const parts = [];
     if (model.memoryMb) parts.push(`内存 ${model.memoryMb} MB`);
     if (model.processId) parts.push(`PID ${model.processId}`);
+    if (model.busy && Array.isArray(model.busyReasons) && model.busyReasons.length > 0) {
+      parts.push(`保护：${model.busyReasons.join('/')}`);
+    } else if (model.inactiveSince) {
+      const minutes = Math.max(0, Math.floor((Date.now() - model.inactiveSince) / 60000));
+      parts.push(`闲置 ${minutes} 分钟`);
+    }
     return parts.length > 0 ? parts.join(' · ') : '运行中';
   }
 
@@ -509,7 +495,9 @@
     const model = modelsCache.find((item) => item.id === id);
     if (!model) return;
 
-    const confirmed = window.confirm(`确定删除「${model.name}」吗？`);
+    const confirmed = window.confirm(
+      `确定删除「${model.name}」吗？\n\n将同时清除该站点的登录状态、缓存和本地数据。`
+    );
     if (!confirmed) return;
 
     await window.api.models.remove(id);
@@ -1052,20 +1040,35 @@
       ? snapshot.splitIds.filter((id) => modelIds.has(id)).slice(0, 3)
       : [];
 
+    // 分屏恢复会同时拉起多站，内存高：先询问，默认只恢复单个活跃模型
     if (snapshot.splitMode && splitIds.length >= 2) {
-      pendingSplitRestore = {
-        ids: splitIds,
-        ratios: normalizeRatios(snapshot.splitRatios, splitIds.length),
-        direction: snapshot.splitDirection === 'vertical' ? 'vertical' : 'horizontal',
-      };
-      updateSplitControls();
-      renderModels(getVisibleModels());
+      const restoreSplit = window.confirm(
+        `上次为 ${splitIds.length} 路分屏，同时恢复会占用更多内存。\n\n确定恢复分屏？\n（取消则只打开单个模型）`
+      );
 
-      const activeId = snapshot.activeModelId && modelIds.has(snapshot.activeModelId)
+      if (restoreSplit) {
+        pendingSplitRestore = {
+          ids: splitIds,
+          ratios: normalizeRatios(snapshot.splitRatios, splitIds.length),
+          direction: snapshot.splitDirection === 'vertical' ? 'vertical' : 'horizontal',
+        };
+        updateSplitControls();
+        renderModels(getVisibleModels());
+
+        const activeId = snapshot.activeModelId && modelIds.has(snapshot.activeModelId)
+          ? snapshot.activeModelId
+          : splitIds[0];
+        switchModel(activeId);
+        return true;
+      }
+
+      const singleId = snapshot.activeModelId && modelIds.has(snapshot.activeModelId)
         ? snapshot.activeModelId
         : splitIds[0];
-      switchModel(activeId);
-      return true;
+      if (singleId) {
+        switchModel(singleId);
+        return true;
+      }
     }
 
     if (snapshot.activeModelId && modelIds.has(snapshot.activeModelId)) {
@@ -1236,6 +1239,18 @@
         refreshStatusPanel();
       }
     });
+
+    if (window.api.memory && typeof window.api.memory.onReclaimed === 'function') {
+      window.api.memory.onReclaimed((data) => {
+        const count = data && Array.isArray(data.closedIds) ? data.closedIds.length : 0;
+        if (count > 0) {
+          console.info(`[memory] auto reclaimed ${count} background view(s)`, data);
+        }
+        if (statusModal.classList.contains('show')) {
+          refreshStatusPanel();
+        }
+      });
+    }
   }
 
   // ── 初始化 ──
@@ -1324,7 +1339,6 @@
     splitRestoreBtn.addEventListener('click', restorePendingSplit);
     splitHorizontalBtn.addEventListener('click', () => setSplitDirection('horizontal'));
     splitVerticalBtn.addEventListener('click', () => setSplitDirection('vertical'));
-    exportConversationBtn.addEventListener('click', exportConversation);
     placeholderRefreshBtn.addEventListener('click', refreshPlaceholderModel);
     sidebarToggleBtn.addEventListener('click', toggleSidebarCollapsed);
     themeBtn.addEventListener('click', toggleTheme);

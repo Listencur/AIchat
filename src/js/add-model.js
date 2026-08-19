@@ -131,7 +131,9 @@
   async function handleDelete() {
     if (!editingModel) return;
 
-    const confirmed = window.confirm(`确定删除「${editingModel.name}」吗？`);
+    const confirmed = window.confirm(
+      `确定删除「${editingModel.name}」吗？\n\n将同时清除该站点的登录状态、缓存和本地数据。`
+    );
     if (!confirmed) return;
 
     await window.api.models.remove(editingModel.id);
